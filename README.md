@@ -20,7 +20,7 @@ A Simple Discord Bot Built With Node.js - JavaScript
 
 2 - Change Your Token In .env
 
-3 - Deploy On Render.com [Easy - Node.js Repository Happy Moderation]
+3 - Deploy On Render.com [Easy - Node.js Repository]
 
 ---
 
@@ -32,6 +32,6 @@ A Simple Discord Bot Built With Node.js - JavaScript
 
 !ban @user
 
-!clear <1,2,3>
+!clear <1 ~ 100>
 
 !createwebhook <WebhookBot - URL> "Color Code" <Headline> "Your Messages"
