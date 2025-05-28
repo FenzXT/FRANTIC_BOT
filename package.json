@@ -1,0 +1,15 @@
+{
+  "name": "FRANTIC_BOT",
+  "version": "1.0.0",
+  "description": "A Discord bot with moderation and webhook features",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "FenzXT",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.0.0",
+    "dotenv": "^16.0.0"
+  }
+}
