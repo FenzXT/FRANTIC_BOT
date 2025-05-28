@@ -1,7 +1,7 @@
 {
   "name": "FRANTIC_BOT",
   "version": "1.0.0",
-  "description": "A Discord bot with moderation and webhook features",
+  "description": "Simple Discord Bot For Moderation & Webhook Creation!",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
