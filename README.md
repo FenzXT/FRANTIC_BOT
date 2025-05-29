@@ -18,7 +18,7 @@ A Simple Discord Bot Built With Node.js - JavaScript
 
 1 - Clone The Repository
 
-2 - Go And Read .env File For Full INFO!
+2 - Go And Read The Above .env File For Full INFO!
 
 ---
 
