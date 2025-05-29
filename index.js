@@ -27,6 +27,24 @@ client.on('messageCreate', async (message) => {
   // Ignore bots and DMs
   if (message.author.bot || !message.guild) return;
 
+  // Help Command
+  if (message.content.startsWith('!help')) {
+    const helpEmbed = new EmbedBuilder()
+      .setTitle('Bot Commands Help')
+      .setColor('#0099ff')
+      .setDescription('Here are all available commands:')
+      .addFields(
+        { name: '!kick @user', value: 'Kicks the mentioned user (requires KickMembers permission)' },
+        { name: '!ban @user', value: 'Bans the mentioned user (requires BanMembers permission)' },
+        { name: '!clear <number>', value: 'Deletes the specified number of messages (1-100, requires ManageMessages permission)' },
+        { name: '!timeout @user <seconds>', value: 'Times out the user for the given seconds (requires ModerateMembers permission)' },
+        { name: '!createwebhook <url> <color> <headline> <message>', value: 'Sends a message via webhook (requires ManageWebhooks permission)' },
+        { name: '!help', value: 'Shows this help message' }
+      )
+      .setFooter({ text: 'Bot by You' });
+    return message.channel.send({ embeds: [helpEmbed] });
+  }
+
   // Kick Command
   if (message.content.startsWith('!kick')) {
     if (!message.member.permissions.has(PermissionsBitField.Flags.KickMembers)) {
