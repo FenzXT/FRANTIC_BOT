@@ -24,6 +24,8 @@ A Simple Discord Bot Built With Node.js - JavaScript
 
 ▪︎ Commands
 
+!help
+
 !timeout @user <60s,24h,30d>
 
 !kick @user
