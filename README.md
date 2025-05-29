@@ -32,4 +32,4 @@ A Simple Discord Bot Built With Node.js - JavaScript
 
 !clear <1 ~ 100>
 
-!createwebhook <Webhook - URL> <Color Code> "Headline" "Your Messages"
+!createwebhook <WebhookURL> "Color Code" "Headline" "Your Messages"
