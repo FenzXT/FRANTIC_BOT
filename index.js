@@ -7,6 +7,22 @@ const {
   EmbedBuilder, 
   WebhookClient 
 } = require('discord.js');
+const fs = require('fs');
+
+// Load welcome config
+let welcomeConfig;
+try {
+  welcomeConfig = require('./welcomeConfig.json');
+} catch (err) {
+  welcomeConfig = {
+    channel: "",
+    message: "Welcome <@user> to the server! You are member #{membercount}.",
+    color: "#00ff00",
+    image: "",
+    enabled: false
+  };
+  fs.writeFileSync('./welcomeConfig.json', JSON.stringify(welcomeConfig, null, 2));
+}
 
 const client = new Client({
   intents: [
@@ -39,9 +55,13 @@ client.on('messageCreate', async (message) => {
         { name: '!clear <number>', value: 'Deletes the specified number of messages (1-100, requires ManageMessages permission)' },
         { name: '!timeout @user <seconds>', value: 'Times out the user for the given seconds (requires ModerateMembers permission)' },
         { name: '!createwebhook <url> <color> <headline> <message>', value: 'Sends a message via webhook (requires ManageWebhooks permission)' },
+        { name: '!setchannel #channel', value: 'Sets the channel for welcome messages (requires Administrator permission)' },
+        { name: '!setwelcomemsg [message]', value: 'Sets the custom welcome message (use <@user>, {membercount}, {user_created}, {join_date})' },
+        { name: '!setwelcomecolor [hex color]', value: 'Sets the embed color for welcome messages (use hex code)' },
+        { name: '!setwelcomeimage [image url]', value: 'Sets the image URL for the welcome embed' },
         { name: '!help', value: 'Shows this help message' }
       )
-      .setFooter({ text: 'Bot by You' });
+      .setFooter({ text: 'FRANTIC BOT !HELP' });
     return message.channel.send({ embeds: [helpEmbed] });
   }
 
@@ -134,13 +154,80 @@ client.on('messageCreate', async (message) => {
         .setTitle(headline)
         .setDescription(msg)
         .setColor(color);
-
       await webhookClient.send({ embeds: [embed] });
       message.channel.send('Message sent via the provided webhook!');
     } catch (err) {
       console.error(err);
       message.channel.send('Failed to send message via the webhook. (Check the URL and permissions)');
     }
+  }
+
+  // Welcome Channel Command
+  if (message.content.startsWith('!setchannel ') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    const channel = message.mentions.channels.first();
+    if (channel) {
+      welcomeConfig.channel = channel.id;
+      welcomeConfig.enabled = true;
+      fs.writeFileSync('./welcomeConfig.json', JSON.stringify(welcomeConfig, null, 2));
+      return message.reply(`Welcome channel set to ${channel}`);
+    }
+  }
+
+  // Set Welcome Message Command
+  if (message.content.startsWith('!setwelcomemsg ') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    welcomeConfig.message = message.content.slice('!setwelcomemsg '.length);
+    fs.writeFileSync('./welcomeConfig.json', JSON.stringify(welcomeConfig, null, 2));
+    return message.reply('Welcome message updated!');
+  }
+
+  // Set Welcome Color Command
+  if (message.content.startsWith('!setwelcomecolor ') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    const color = message.content.split(' ')[1];
+    if (/^#[0-9A-Fa-f]{6}$/.test(color)) {
+      welcomeConfig.color = color;
+      fs.writeFileSync('./welcomeConfig.json', JSON.stringify(welcomeConfig, null, 2));
+      return message.reply(`Welcome color set to ${color}`);
+    }
+  }
+
+  // Set Welcome Image Command
+  if (message.content.startsWith('!setwelcomeimage ') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    const url = message.content.split(' ')[1];
+    if (url.startsWith('http')) {
+      welcomeConfig.image = url;
+      fs.writeFileSync('./welcomeConfig.json', JSON.stringify(welcomeConfig, null, 2));
+      return message.reply(`Welcome image set!`);
+    }
+  }
+});
+
+// Welcome Event Handler
+client.on('guildMemberAdd', async member => {
+  if (!welcomeConfig.enabled || !welcomeConfig.channel) return;
+  const channel = member.guild.channels.cache.get(welcomeConfig.channel);
+  if (!channel) return;
+
+  const joinDate = member.joinedAt.toLocaleDateString();
+  const userCreated = member.user.createdAt.toLocaleDateString();
+  const memberCount = member.guild.memberCount;
+
+  let msg = welcomeConfig.message
+    .replace('<@user>', `<@${member.id}>`)
+    .replace('{membercount}', memberCount)
+    .replace('{user_created}', userCreated)
+    .replace('{join_date}', joinDate);
+
+  // Hardcoded title as requested
+  const embed = new EmbedBuilder()
+    .setTitle(`Welcome To The ${member.guild.name}!`)
+    .setDescription(msg)
+    .setColor(welcomeConfig.color)
+    .setImage(welcomeConfig.image || null);
+
+  try {
+    await channel.send({ embeds: [embed] });
+  } catch (err) {
+    console.error('Failed to send welcome message:', err);
   }
 });
 
