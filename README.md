@@ -1,4 +1,4 @@
-▪︎ Discord Moderation - Welcomer - Webhook Bot!
+▪︎ Discord Moderation - Welcome - Webhook Bot!
 
 A Simple Discord Bot Built With Node.js - JavaScript
 
