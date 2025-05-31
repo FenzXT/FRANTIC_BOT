@@ -12,6 +12,8 @@ A Simple Discord Bot Built With Node.js - JavaScript
 
 - Create Webhooks & Send Embedded Messages
 
+- Create Customizable Welcome Message By Your Own!
+
 ---
 
 ▪︎ Setup
@@ -35,3 +37,15 @@ A Simple Discord Bot Built With Node.js - JavaScript
 !clear <1 ~ 100>
 
 !createwebhook "WebhookURL" "Color Code" "Headline" "Your Messages"
+
+!setchannel #channel - !setwelcomemsg [message] - !setwelcomecolor [hex] - !setwelcomeimage [url]
+
+Welcome Variables:
+<@user>
+{membercount}
+{join_date}
+{user_created}
+
+---
+
+Please Give Credits To The Developer If You Use This Source Code!
