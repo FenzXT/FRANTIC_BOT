@@ -38,12 +38,16 @@ A Simple Discord Bot Built With Node.js - JavaScript
 
 !createwebhook "WebhookURL" "Color Code" "Headline" "Your Messages"
 
-!setchannel #channel - !setwelcomemsg [message] - !setwelcomecolor [hex] - !setwelcomeimage [url]
+!setchannel #channel  -  !setwelcomemsg [message]  -  !setwelcomecolor [hex]  -  !setwelcomeimage [url]
 
 Welcome Variables:
+
 <@user>
+
 {membercount}
+
 {join_date}
+
 {user_created}
 
 ---
