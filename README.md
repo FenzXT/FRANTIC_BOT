@@ -52,4 +52,4 @@ Welcome Variables:
 
 ---
 
-Please Give Credits To The Developer If You Use This Source Code!
+If You Are Using Our Source Code Then Give Credits To The Real Developer!
