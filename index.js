@@ -241,7 +241,7 @@ client.on('messageCreate', async (message) => {
   }
 
   // Welcome Channel Command
-  if (message.content.startsWith('!setchannel ') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+  if (message.content.startsWith('!setchannel') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     const channel = message.mentions.channels.first();
     if (!channel) {
       return message.reply(
@@ -256,7 +256,7 @@ client.on('messageCreate', async (message) => {
   }
 
   // Set Welcome Message Command
-  if (message.content.startsWith('!setwelcomemsg ') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+  if (message.content.startsWith('!setwelcomemsg') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     const newMsg = message.content.slice('!setwelcomemsg '.length);
     if (!newMsg) {
       return message.reply(
@@ -270,7 +270,7 @@ client.on('messageCreate', async (message) => {
   }
 
   // Set Welcome Color Command
-  if (message.content.startsWith('!setwelcomecolor ') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+  if (message.content.startsWith('!setwelcomecolor') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     const color = message.content.split(' ')[1];
     if (!color || !/^#[0-9A-Fa-f]{6}$/.test(color)) {
       return message.reply(
@@ -284,7 +284,7 @@ client.on('messageCreate', async (message) => {
   }
 
   // Set Welcome Image Command
-  if (message.content.startsWith('!setwelcomeimage ') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+  if (message.content.startsWith('!setwelcomeimage') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     const url = message.content.split(' ')[1];
     if (!url || !url.startsWith('http')) {
       return message.reply(
