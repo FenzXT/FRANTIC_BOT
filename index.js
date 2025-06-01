@@ -46,9 +46,9 @@ client.on('messageCreate', async (message) => {
   // Help Command
   if (message.content.startsWith('!help')) {
     const helpEmbed = new EmbedBuilder()
-      .setTitle('Bot Commands Help')
-      .setColor('#0099ff')
-      .setDescription('Here are all available commands:')
+      .setTitle('BOT ALL COMMANDS')
+      .setColor('#7500ff')
+      .setDescription('HERE ARE ALL AVAILABLE COMMANDS:')
       .addFields(
         { name: '!kick @user', value: 'Kicks the mentioned user (requires KickMembers permission)' },
         { name: '!ban @user', value: 'Bans the mentioned user (requires BanMembers permission)' },
