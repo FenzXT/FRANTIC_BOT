@@ -21,7 +21,7 @@ try {
   welcomeConfig = {
     channel: "",
     message: "Welcome <@user> to the server! You are member #{membercount}.",
-    color: "#00ff00",
+    color: "#7500ff",
     image: "",
     enabled: false
   };
