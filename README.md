@@ -12,7 +12,7 @@ A Simple Discord Bot Built With Node.js - JavaScript
 
 - Create Webhooks & Send Embedded Messages
 
-- Create Customizable Welcome Message By Your Own!
+- Create Customizable Welcome Message By Your Own
 
 ---
 
