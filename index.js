@@ -32,6 +32,9 @@ try {
 let serverData = {};
 let pendingPaste = {};
 
+// AFK system
+let afkMap = {}; // { userId: { reason: string, timestamp: Date } }
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -51,7 +54,32 @@ client.on('messageCreate', async (message) => {
   // Ignore bots and DMs
   if (message.author.bot || !message.guild) return;
 
-  // Help Command (Paginated, 3 pages)
+  // --- AFK SYSTEM ---
+  // Set AFK
+  if (message.content.startsWith('!afk')) {
+    const reason = message.content.slice(5).trim() || "I'm AFK right now.";
+    afkMap[message.author.id] = { reason, timestamp: Date.now() };
+    return message.reply(`You are now AFK: ${reason}`);
+  }
+
+  // Remove AFK if user sends any message (except !afk)
+  if (afkMap[message.author.id] && !message.content.startsWith('!afk')) {
+    delete afkMap[message.author.id];
+    message.reply("Welcome back! Your AFK status has been removed.");
+  }
+
+  // Notify if mentioning an AFK user
+  if (message.mentions.users.size > 0) {
+    message.mentions.users.forEach(user => {
+      if (afkMap[user.id]) {
+        message.channel.send({
+          content: `**${user.tag}** is currently AFK: ${afkMap[user.id].reason}`
+        });
+      }
+    });
+  }
+
+  // --- HELP COMMAND (PAGINATED, 3 PAGES) ---
   if (message.content.startsWith('!help')) {
     // Page 1 embed
     const helpEmbedPage1 = new EmbedBuilder()
@@ -81,7 +109,7 @@ client.on('messageCreate', async (message) => {
       )
       .setFooter({ text: 'FRANTIC BOT !HELP' });
 
-    // Page 3 embed (NEW)
+    // Page 3 embed (with !afk usage and example)
     const helpEmbedPage3 = new EmbedBuilder()
       .setTitle('BOT ALL COMMANDS - PAGE 3')
       .setColor('#7500ff')
@@ -104,6 +132,12 @@ client.on('messageCreate', async (message) => {
                  'Bot: Select channels option: `1` = Delete, `2` = Do Not Delete\n' +
                  'You: `2`\n' +
                  'Bot: Type `run` to confirm and paste.'
+        },
+        { 
+          name: '!afk [reason]', 
+          value: 'Sets your AFK status with an optional reason. Others will see it when they mention you.\n' +
+                 '**Usage:** `!afk [reason]`\n' +
+                 '**Example:** `!afk Out of home`'
         }
       )
       .setFooter({ text: 'FRANTIC BOT !HELP' });
