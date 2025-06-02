@@ -46,6 +46,8 @@ A Simple Discord Bot Built With Node.js - JavaScript
 
 !paste-server
 
+!afk [reason]
+
 Welcome Variables:
 
 <@user>
