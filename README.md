@@ -42,6 +42,10 @@ A Simple Discord Bot Built With Node.js - JavaScript
 
 !setchannel #channel  -  !setwelcomemsg [message]  -  !setwelcomecolor [hex]  -  !setwelcomeimage [url]
 
+!copy-server
+
+!paste-server
+
 Welcome Variables:
 
 <@user>
@@ -51,10 +55,6 @@ Welcome Variables:
 {join_date}
 
 {user_created}
-
-!copy-server
-
-!paste-server
 
 ---
 
