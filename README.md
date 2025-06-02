@@ -12,6 +12,8 @@ A Simple Discord Bot Built With Node.js - JavaScript
 
 - Create Webhooks & Send Embedded Messages
 
+- Advanced Copy Server And Paste Without Kicking Members
+
 - Create Customizable Welcome Message By Your Own
 
 ---
@@ -49,6 +51,10 @@ Welcome Variables:
 {join_date}
 
 {user_created}
+
+!copy-server
+
+!paste-server
 
 ---
 
