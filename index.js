@@ -9,7 +9,8 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  ComponentType
+  ComponentType,
+  SelectMenuBuilder
 } = require('discord.js');
 const fs = require('fs');
 
@@ -28,6 +29,10 @@ try {
   fs.writeFileSync('./welcomeConfig.json', JSON.stringify(welcomeConfig, null, 2));
 }
 
+// Server copy/paste data
+let serverData = {};
+let userChoices = {};
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -39,15 +44,26 @@ const client = new Client({
   partials: [Partials.Message, Partials.Channel, Partials.GuildMember]
 });
 
-client.once('ready', () => {
+client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}`);
+  // Register slash commands
+  await client.application.commands.set([
+    {
+      name: 'copy-server',
+      description: 'Copy the server structure'
+    },
+    {
+      name: 'paste-server',
+      description: 'Paste the server structure with options'
+    }
+  ]);
 });
 
 client.on('messageCreate', async (message) => {
   // Ignore bots and DMs
   if (message.author.bot || !message.guild) return;
 
-  // Help Command (Paginated)
+  // Help Command (Paginated, 3 pages)
   if (message.content.startsWith('!help')) {
     // Page 1 embed
     const helpEmbedPage1 = new EmbedBuilder()
@@ -77,6 +93,27 @@ client.on('messageCreate', async (message) => {
       )
       .setFooter({ text: 'FRANTIC BOT !HELP' });
 
+    // Page 3 embed (NEW)
+    const helpEmbedPage3 = new EmbedBuilder()
+      .setTitle('BOT ALL COMMANDS - PAGE 3')
+      .setColor('#7500ff')
+      .setDescription('HERE ARE ALL AVAILABLE COMMANDS (PAGE 3):')
+      .addFields(
+        { 
+          name: '/copy-server', 
+          value: 'Copies the server structure (roles/channels) for admins\n' +
+                 '**Usage:** `/copy-server`\n' +
+                 '**Example:** `/copy-server`'
+        },
+        { 
+          name: '/paste-server', 
+          value: 'Pastes the server structure with options for admins\n' +
+                 '**Usage:** `/paste-server`\n' +
+                 '**Example:** `/paste-server` (then choose delete options and click Run)'
+        }
+      )
+      .setFooter({ text: 'FRANTIC BOT !HELP' });
+
     // Buttons
     const page1Button = new ButtonBuilder()
       .setCustomId('help_page_1')
@@ -88,12 +125,19 @@ client.on('messageCreate', async (message) => {
       .setLabel('Page 2')
       .setStyle(ButtonStyle.Success);
 
-    // Initial row with Page 2 button
-    const rowPage1 = new ActionRowBuilder().addComponents(page2Button);
-    // Row with Page 1 button
-    const rowPage2 = new ActionRowBuilder().addComponents(page1Button);
+    const page3Button = new ButtonBuilder()
+      .setCustomId('help_page_3')
+      .setLabel('Page 3')
+      .setStyle(ButtonStyle.Secondary);
 
-    // Send initial message with page 1 embed and Page 2 button
+    // Initial row with Page 2 and Page 3 buttons
+    const rowPage1 = new ActionRowBuilder().addComponents(page2Button, page3Button);
+    // Row with Page 1 and Page 3 buttons
+    const rowPage2 = new ActionRowBuilder().addComponents(page1Button, page3Button);
+    // Row with Page 1 and Page 2 buttons
+    const rowPage3 = new ActionRowBuilder().addComponents(page1Button, page2Button);
+
+    // Send initial message with page 1 embed and Page 2/3 buttons
     const helpMessage = await message.channel.send({ embeds: [helpEmbedPage1], components: [rowPage1] });
 
     // Create a collector to listen for button interactions for 60 seconds
@@ -112,12 +156,15 @@ client.on('messageCreate', async (message) => {
         await interaction.update({ embeds: [helpEmbedPage2], components: [rowPage2] });
       } else if (interaction.customId === 'help_page_1') {
         await interaction.update({ embeds: [helpEmbedPage1], components: [rowPage1] });
+      } else if (interaction.customId === 'help_page_3') {
+        await interaction.update({ embeds: [helpEmbedPage3], components: [rowPage3] });
       }
     });
 
     collector.on('end', () => {
       // Disable buttons after timeout
-      const disabledRow = new ActionRowBuilder().addComponents(page2Button.setDisabled(true));
+      const disabledRow = new ActionRowBuilder()
+        .addComponents(page2Button.setDisabled(true), page3Button.setDisabled(true));
       helpMessage.edit({ components: [disabledRow] }).catch(() => {});
     });
 
@@ -325,6 +372,156 @@ client.on('guildMemberAdd', async member => {
     await channel.send({ embeds: [embed] });
   } catch (err) {
     console.error('Failed to send welcome message:', err);
+  }
+});
+
+// --- SLASH COMMAND AND INTERACTION HANDLERS FOR SERVER COPY/PASTE ---
+
+client.on('interactionCreate', async interaction => {
+  // Only handle slash commands
+  if (!interaction.isCommand()) return;
+
+  // Admin check
+  if (!interaction.memberPermissions.has(PermissionsBitField.Flags.Administrator)) {
+    return interaction.reply({ content: "You do not have admin permissions.", ephemeral: true });
+  }
+
+  // /copy-server
+  if (interaction.commandName === 'copy-server') {
+    const guild = interaction.guild;
+    const roles = guild.roles.cache
+      .filter(role => role.name !== '@everyone')
+      .map(role => ({
+        name: role.name,
+        color: role.color,
+        permissions: role.permissions.bitfield
+      }));
+    const channels = guild.channels.cache.map(channel => ({
+      name: channel.name,
+      type: channel.type,
+      parentId: channel.parentId
+    }));
+    serverData[guild.id] = { roles, channels };
+    const embed = new EmbedBuilder()
+      .setColor(0x7500ff)
+      .setTitle('Server Structure Copied')
+      .setDescription('You can now use `/paste-server` to paste the server structure.');
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+  }
+
+  // /paste-server
+  if (interaction.commandName === 'paste-server') {
+    if (!serverData[interaction.guildId]) {
+      return interaction.reply({ content: "No server data to paste. Use `/copy-server` first.", ephemeral: true });
+    }
+    userChoices[interaction.id] = { roles: null, channels: null };
+    const embed = new EmbedBuilder()
+      .setColor(0x7500ff)
+      .setTitle('Paste Server Structure')
+      .setDescription('Choose your options for pasting the server:');
+    const rolesMenu = new SelectMenuBuilder()
+      .setCustomId('delete-roles-' + interaction.id)
+      .setPlaceholder('Delete Roles?')
+      .addOptions(
+        { label: 'Yes', value: 'delete-roles-yes' },
+        { label: 'No', value: 'delete-roles-no' }
+      );
+    const channelsMenu = new SelectMenuBuilder()
+      .setCustomId('delete-channels-' + interaction.id)
+      .setPlaceholder('Delete Channels?')
+      .addOptions(
+        { label: 'Yes', value: 'delete-channels-yes' },
+        { label: 'No', value: 'delete-channels-no' }
+      );
+    await interaction.reply({
+      embeds: [embed],
+      components: [
+        new ActionRowBuilder().addComponents(rolesMenu),
+        new ActionRowBuilder().addComponents(channelsMenu)
+      ],
+      ephemeral: true
+    });
+  }
+});
+
+// Handle select menus and buttons
+client.on('interactionCreate', async interaction => {
+  if (interaction.isSelectMenu()) {
+    const id = interaction.customId.split('-').pop();
+    const choice = interaction.values[0];
+    if (!userChoices[id]) userChoices[id] = { roles: null, channels: null };
+    if (interaction.customId.startsWith('delete-roles-')) {
+      userChoices[id].roles = choice === 'delete-roles-yes';
+    } else if (interaction.customId.startsWith('delete-channels-')) {
+      userChoices[id].channels = choice === 'delete-channels-yes';
+    }
+    if (userChoices[id].roles !== null && userChoices[id].channels !== null) {
+      const runButton = new ButtonBuilder()
+        .setCustomId('run-paste-' + id)
+        .setLabel('Run')
+        .setStyle(ButtonStyle.Primary);
+      const embed = new EmbedBuilder()
+        .setColor(0x7500ff)
+        .setTitle('Ready to Proceed')
+        .setDescription('Click **Run** to paste the server structure.');
+      await interaction.update({
+        embeds: [embed],
+        components: [new ActionRowBuilder().addComponents(runButton)]
+      });
+    } else {
+      await interaction.deferUpdate();
+    }
+  } else if (interaction.isButton() && interaction.customId.startsWith('run-paste-')) {
+    const id = interaction.customId.split('-').pop();
+    const choices = userChoices[id];
+    await interaction.deferReply({ ephemeral: true });
+    const guild = interaction.guild;
+    const data = serverData[guild.id];
+    if (!data) {
+      return interaction.editReply({ content: "No server data to paste. Use `/copy-server` first.", ephemeral: true });
+    }
+    // Delete roles if chosen
+    if (choices.roles) {
+      for (const role of guild.roles.cache.values()) {
+        if (role.name !== '@everyone' && !role.managed) {
+          try { await role.delete("Pasting server structure"); } catch (err) { }
+        }
+      }
+    }
+    // Delete channels if chosen
+    if (choices.channels) {
+      for (const channel of guild.channels.cache.values()) {
+        try { await channel.delete("Pasting server structure"); } catch (err) { }
+      }
+    }
+    // Recreate roles
+    for (const roleData of data.roles) {
+      try {
+        await guild.roles.create({
+          name: roleData.name,
+          color: roleData.color,
+          permissions: BigInt(roleData.permissions)
+        });
+      } catch (err) { }
+    }
+    // Recreate channels (simplified: only text channels)
+    for (const channelData of data.channels) {
+      if (channelData.type === 0) {
+        try {
+          await guild.channels.create({
+            name: channelData.name,
+            type: channelData.type,
+            parent: channelData.parentId
+          });
+        } catch (err) { }
+      }
+    }
+    delete userChoices[id];
+    const embed = new EmbedBuilder()
+      .setColor(0x7500ff)
+      .setTitle('Server Structure Pasted')
+      .setDescription(`Delete Roles: ${choices.roles ? 'Yes' : 'No'}\nDelete Channels: ${choices.channels ? 'Yes' : 'No'}`);
+    await interaction.editReply({ embeds: [embed] });
   }
 });
 
