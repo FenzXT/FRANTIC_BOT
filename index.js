@@ -109,7 +109,7 @@ client.on('messageCreate', async (message) => {
       )
       .setFooter({ text: 'FRANTIC BOT !HELP' });
 
-    // Page 3 embed (with !afk usage and example)
+    // Page 3 embed
     const helpEmbedPage3 = new EmbedBuilder()
       .setTitle('BOT ALL COMMANDS - PAGE 3')
       .setColor('#7500ff')
@@ -125,13 +125,7 @@ client.on('messageCreate', async (message) => {
           name: '!paste-server', 
           value: 'Pastes the server structure with options for admins\n' +
                  '**Usage:** `!paste-server`\n' +
-                 '**Example:**\n' +
-                 '`!paste-server`\n' +
-                 'Bot: Select roles option: `1` = Delete, `2` = Do Not Delete\n' +
-                 'You: `1`\n' +
-                 'Bot: Select channels option: `1` = Delete, `2` = Do Not Delete\n' +
-                 'You: `2`\n' +
-                 'Bot: Type `run` to confirm and paste.'
+                 '**Example:** `!paste-server`'
         },
         { 
           name: '!afk [reason]', 
