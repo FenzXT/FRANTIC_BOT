@@ -9,8 +9,7 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  ComponentType,
-  SelectMenuBuilder
+  ComponentType
 } = require('discord.js');
 const fs = require('fs');
 
@@ -31,7 +30,7 @@ try {
 
 // Server copy/paste data
 let serverData = {};
-let userChoices = {};
+let pendingPaste = {};
 
 const client = new Client({
   intents: [
@@ -44,19 +43,8 @@ const client = new Client({
   partials: [Partials.Message, Partials.Channel, Partials.GuildMember]
 });
 
-client.once('ready', async () => {
+client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
-  // Register slash commands
-  await client.application.commands.set([
-    {
-      name: 'copy-server',
-      description: 'Copy the server structure'
-    },
-    {
-      name: 'paste-server',
-      description: 'Paste the server structure with options'
-    }
-  ]);
 });
 
 client.on('messageCreate', async (message) => {
@@ -100,16 +88,22 @@ client.on('messageCreate', async (message) => {
       .setDescription('HERE ARE ALL AVAILABLE COMMANDS (PAGE 3):')
       .addFields(
         { 
-          name: '/copy-server', 
+          name: '!copy-server', 
           value: 'Copies the server structure (roles/channels) for admins\n' +
-                 '**Usage:** `/copy-server`\n' +
-                 '**Example:** `/copy-server`'
+                 '**Usage:** `!copy-server`\n' +
+                 '**Example:** `!copy-server`'
         },
         { 
-          name: '/paste-server', 
+          name: '!paste-server', 
           value: 'Pastes the server structure with options for admins\n' +
-                 '**Usage:** `/paste-server`\n' +
-                 '**Example:** `/paste-server` (then choose delete options and click Run)'
+                 '**Usage:** `!paste-server`\n' +
+                 '**Example:**\n' +
+                 '`!paste-server`\n' +
+                 'Bot: Select roles option: `1` = Delete, `2` = Do Not Delete\n' +
+                 'You: `1`\n' +
+                 'Bot: Select channels option: `1` = Delete, `2` = Do Not Delete\n' +
+                 'You: `2`\n' +
+                 'Bot: Type `run` to confirm and paste.'
         }
       )
       .setFooter({ text: 'FRANTIC BOT !HELP' });
@@ -287,6 +281,120 @@ client.on('messageCreate', async (message) => {
     }
   }
 
+  // --- COPY/PASTE SERVER STRUCTURE WITH SIMULATED MENUS ---
+  if (message.content.toLowerCase() === '!copy-server') {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply("You do not have permission to use this command.");
+    }
+    const guild = message.guild;
+    const roles = guild.roles.cache
+      .filter(role => role.name !== '@everyone')
+      .map(role => ({
+        name: role.name,
+        color: role.color,
+        permissions: role.permissions.bitfield
+      }));
+    const channels = guild.channels.cache.map(channel => ({
+      name: channel.name,
+      type: channel.type,
+      parentId: channel.parentId
+    }));
+
+    serverData[guild.id] = { roles, channels };
+    return message.reply("Server structure copied! You can now use `!paste-server`.");
+  }
+
+  if (message.content.toLowerCase() === '!paste-server') {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply("You do not have permission to use this command.");
+    }
+    if (!serverData[message.guild.id]) {
+      return message.reply("No server data to paste. Use `!copy-server` first.");
+    }
+
+    pendingPaste[message.author.id] = {
+      guildId: message.guild.id,
+      step: 'deleteRoles',
+      deleteRoles: null,
+      deleteChannels: null
+    };
+    return message.reply(
+      "**Select an option for roles:**\n" +
+      "`1` - Delete Roles\n" +
+      "`2` - Do Not Delete Roles\n" +
+      "Reply with `1` or `2`."
+    );
+  }
+
+  // Handle simulated menu replies for paste-server
+  if (pendingPaste[message.author.id]) {
+    const state = pendingPaste[message.author.id];
+    const content = message.content.trim();
+
+    if (state.step === 'deleteRoles' && (content === '1' || content === '2')) {
+      state.deleteRoles = content === '1';
+      state.step = 'deleteChannels';
+      return message.reply(
+        "**Select an option for channels:**\n" +
+        "`1` - Delete Channels\n" +
+        "`2` - Do Not Delete Channels\n" +
+        "Reply with `1` or `2`."
+      );
+    }
+
+    if (state.step === 'deleteChannels' && (content === '1' || content === '2')) {
+      state.deleteChannels = content === '1';
+      state.step = 'confirm';
+      return message.reply(
+        `**Ready to run!**\nDelete Roles: ${state.deleteRoles ? 'Yes' : 'No'}\nDelete Channels: ${state.deleteChannels ? 'Yes' : 'No'}\n` +
+        "Type `run` to proceed."
+      );
+    }
+
+    if (state.step === 'confirm' && content.toLowerCase() === 'run') {
+      // Proceed to paste server structure
+      const guild = message.guild;
+      const data = serverData[guild.id];
+
+      (async () => {
+        if (state.deleteRoles) {
+          for (const role of guild.roles.cache.values()) {
+            if (role.name !== '@everyone' && !role.managed) {
+              try { await role.delete("Pasting server structure"); } catch {}
+            }
+          }
+        }
+        if (state.deleteChannels) {
+          for (const channel of guild.channels.cache.values()) {
+            try { await channel.delete("Pasting server structure"); } catch {}
+          }
+        }
+        for (const roleData of data.roles) {
+          try {
+            await guild.roles.create({
+              name: roleData.name,
+              color: roleData.color,
+              permissions: BigInt(roleData.permissions)
+            });
+          } catch {}
+        }
+        for (const channelData of data.channels) {
+          if (channelData.type === 0) {
+            try {
+              await guild.channels.create({
+                name: channelData.name,
+                type: channelData.type,
+                parent: channelData.parentId
+              });
+            } catch {}
+          }
+        }
+        delete pendingPaste[message.author.id];
+        return message.reply("Server structure pasted!");
+      })();
+    }
+  }
+
   // Welcome Channel Command
   if (message.content.startsWith('!setchannel') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     const channel = message.mentions.channels.first();
@@ -372,156 +480,6 @@ client.on('guildMemberAdd', async member => {
     await channel.send({ embeds: [embed] });
   } catch (err) {
     console.error('Failed to send welcome message:', err);
-  }
-});
-
-// --- SLASH COMMAND AND INTERACTION HANDLERS FOR SERVER COPY/PASTE ---
-
-client.on('interactionCreate', async interaction => {
-  // Only handle slash commands
-  if (!interaction.isCommand()) return;
-
-  // Admin check
-  if (!interaction.memberPermissions.has(PermissionsBitField.Flags.Administrator)) {
-    return interaction.reply({ content: "You do not have admin permissions.", ephemeral: true });
-  }
-
-  // /copy-server
-  if (interaction.commandName === 'copy-server') {
-    const guild = interaction.guild;
-    const roles = guild.roles.cache
-      .filter(role => role.name !== '@everyone')
-      .map(role => ({
-        name: role.name,
-        color: role.color,
-        permissions: role.permissions.bitfield
-      }));
-    const channels = guild.channels.cache.map(channel => ({
-      name: channel.name,
-      type: channel.type,
-      parentId: channel.parentId
-    }));
-    serverData[guild.id] = { roles, channels };
-    const embed = new EmbedBuilder()
-      .setColor(0x7500ff)
-      .setTitle('Server Structure Copied')
-      .setDescription('You can now use `/paste-server` to paste the server structure.');
-    await interaction.reply({ embeds: [embed], ephemeral: true });
-  }
-
-  // /paste-server
-  if (interaction.commandName === 'paste-server') {
-    if (!serverData[interaction.guildId]) {
-      return interaction.reply({ content: "No server data to paste. Use `/copy-server` first.", ephemeral: true });
-    }
-    userChoices[interaction.id] = { roles: null, channels: null };
-    const embed = new EmbedBuilder()
-      .setColor(0x7500ff)
-      .setTitle('Paste Server Structure')
-      .setDescription('Choose your options for pasting the server:');
-    const rolesMenu = new SelectMenuBuilder()
-      .setCustomId('delete-roles-' + interaction.id)
-      .setPlaceholder('Delete Roles?')
-      .addOptions(
-        { label: 'Yes', value: 'delete-roles-yes' },
-        { label: 'No', value: 'delete-roles-no' }
-      );
-    const channelsMenu = new SelectMenuBuilder()
-      .setCustomId('delete-channels-' + interaction.id)
-      .setPlaceholder('Delete Channels?')
-      .addOptions(
-        { label: 'Yes', value: 'delete-channels-yes' },
-        { label: 'No', value: 'delete-channels-no' }
-      );
-    await interaction.reply({
-      embeds: [embed],
-      components: [
-        new ActionRowBuilder().addComponents(rolesMenu),
-        new ActionRowBuilder().addComponents(channelsMenu)
-      ],
-      ephemeral: true
-    });
-  }
-});
-
-// Handle select menus and buttons
-client.on('interactionCreate', async interaction => {
-  if (interaction.isSelectMenu()) {
-    const id = interaction.customId.split('-').pop();
-    const choice = interaction.values[0];
-    if (!userChoices[id]) userChoices[id] = { roles: null, channels: null };
-    if (interaction.customId.startsWith('delete-roles-')) {
-      userChoices[id].roles = choice === 'delete-roles-yes';
-    } else if (interaction.customId.startsWith('delete-channels-')) {
-      userChoices[id].channels = choice === 'delete-channels-yes';
-    }
-    if (userChoices[id].roles !== null && userChoices[id].channels !== null) {
-      const runButton = new ButtonBuilder()
-        .setCustomId('run-paste-' + id)
-        .setLabel('Run')
-        .setStyle(ButtonStyle.Primary);
-      const embed = new EmbedBuilder()
-        .setColor(0x7500ff)
-        .setTitle('Ready to Proceed')
-        .setDescription('Click **Run** to paste the server structure.');
-      await interaction.update({
-        embeds: [embed],
-        components: [new ActionRowBuilder().addComponents(runButton)]
-      });
-    } else {
-      await interaction.deferUpdate();
-    }
-  } else if (interaction.isButton() && interaction.customId.startsWith('run-paste-')) {
-    const id = interaction.customId.split('-').pop();
-    const choices = userChoices[id];
-    await interaction.deferReply({ ephemeral: true });
-    const guild = interaction.guild;
-    const data = serverData[guild.id];
-    if (!data) {
-      return interaction.editReply({ content: "No server data to paste. Use `/copy-server` first.", ephemeral: true });
-    }
-    // Delete roles if chosen
-    if (choices.roles) {
-      for (const role of guild.roles.cache.values()) {
-        if (role.name !== '@everyone' && !role.managed) {
-          try { await role.delete("Pasting server structure"); } catch (err) { }
-        }
-      }
-    }
-    // Delete channels if chosen
-    if (choices.channels) {
-      for (const channel of guild.channels.cache.values()) {
-        try { await channel.delete("Pasting server structure"); } catch (err) { }
-      }
-    }
-    // Recreate roles
-    for (const roleData of data.roles) {
-      try {
-        await guild.roles.create({
-          name: roleData.name,
-          color: roleData.color,
-          permissions: BigInt(roleData.permissions)
-        });
-      } catch (err) { }
-    }
-    // Recreate channels (simplified: only text channels)
-    for (const channelData of data.channels) {
-      if (channelData.type === 0) {
-        try {
-          await guild.channels.create({
-            name: channelData.name,
-            type: channelData.type,
-            parent: channelData.parentId
-          });
-        } catch (err) { }
-      }
-    }
-    delete userChoices[id];
-    const embed = new EmbedBuilder()
-      .setColor(0x7500ff)
-      .setTitle('Server Structure Pasted')
-      .setDescription(`Delete Roles: ${choices.roles ? 'Yes' : 'No'}\nDelete Channels: ${choices.channels ? 'Yes' : 'No'}`);
-    await interaction.editReply({ embeds: [embed] });
   }
 });
 
