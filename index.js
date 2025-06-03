@@ -128,7 +128,7 @@ client.on('messageCreate', async (message) => {
     const page1Button = new ButtonBuilder()
       .setCustomId('help_page_1')
       .setLabel('Page 1')
-      .setStyle(ButtonStyle.Primary);
+      .setStyle(ButtonStyle.Secondary);
 
     const page2Button = new ButtonBuilder()
       .setCustomId('help_page_2')
@@ -138,7 +138,7 @@ client.on('messageCreate', async (message) => {
     const page3Button = new ButtonBuilder()
       .setCustomId('help_page_3')
       .setLabel('Page 3')
-      .setStyle(ButtonStyle.Secondary);
+      .setStyle(ButtonStyle.Primary);
 
     const rowPage1 = new ActionRowBuilder().addComponents(page2Button, page3Button);
     const rowPage2 = new ActionRowBuilder().addComponents(page1Button, page3Button);
@@ -192,10 +192,14 @@ client.on('messageCreate', async (message) => {
 
       const categories = message.guild.channels.cache
         .filter(c => c.type === ChannelType.GuildCategory)
+        .sort((a, b) => a.rawPosition - b.rawPosition)
         .map(cat => ({
+          id: cat.id,
           name: cat.name,
+          position: cat.rawPosition,
           channels: message.guild.channels.cache
             .filter(ch => ch.parentId === cat.id)
+            .sort((a, b) => a.rawPosition - b.rawPosition)
             .map(ch => ({
               name: ch.name,
               type: ch.type,
@@ -204,6 +208,7 @@ client.on('messageCreate', async (message) => {
               bitrate: ch.bitrate || null,
               userLimit: ch.userLimit || null,
               rateLimitPerUser: ch.rateLimitPerUser || 0,
+              position: ch.rawPosition,
               permissionOverwrites: ch.permissionOverwrites.cache.map(po => ({
                 id: po.id,
                 allow: po.allow.bitfield.toString(),
@@ -270,74 +275,119 @@ client.on('messageCreate', async (message) => {
     if (state.step === 'confirm' && content.toLowerCase() === 'run') {
       (async () => {
         try {
+          // 1. Delete roles if requested
           if (state.deleteRoles) {
-            for (const role of message.guild.roles.cache.values()) {
-              if (role.name !== '@everyone' && !role.managed) {
-                try { await role.delete("Pasting server structure"); } catch {}
-              }
+            const rolesToDelete = message.guild.roles.cache
+              .filter(role => role.name !== '@everyone' && !role.managed)
+              .sort((a, b) => b.position - a.position); // Delete from top down
+            for (const role of rolesToDelete.values()) {
+              try { await role.delete("Pasting server structure"); } catch (e) {}
             }
           }
-          if (state.deleteChannels) {
-            for (const channel of message.guild.channels.cache.values()) {
-              try { await channel.delete("Pasting server structure"); } catch {}
-            }
-          }
-          for (const roleData of serverTemplate.roles.sort((a, b) => a.position - b.position)) {
-            await message.guild.roles.create({
+
+          // 2. Recreate roles from lowest to highest position
+          const sortedRoles = serverTemplate.roles.sort((a, b) => a.position - b.position);
+          const newRoles = {}; // Map old role name to new role object
+          for (const roleData of sortedRoles) {
+            const newRole = await message.guild.roles.create({
               name: roleData.name,
               color: roleData.color,
               hoist: roleData.hoist,
               permissions: BigInt(roleData.permissions),
               mentionable: roleData.mentionable,
+              reason: "Recreating server structure"
             });
+            newRoles[roleData.name] = newRole;
           }
-          for (const cat of serverTemplate.categories) {
-            // Create category
-            const category = await message.guild.channels.create({
+
+          // 3. Delete channels if requested
+          if (state.deleteChannels) {
+            for (const channel of message.guild.channels.cache.values()) {
+              try { await channel.delete("Pasting server structure"); } catch {}
+            }
+          }
+
+          // 4. Recreate categories first and map old to new
+          const categoryMap = new Map(); // oldCategoryId -> newCategory
+          const sortedCategories = serverTemplate.categories.sort((a, b) => a.position - b.position);
+          for (const cat of sortedCategories) {
+            const newCategory = await message.guild.channels.create({
               name: cat.name,
               type: ChannelType.GuildCategory,
+              position: cat.position,
             });
+            categoryMap.set(cat.id, newCategory);
+          }
 
-            for (const ch of cat.channels) {
-              // Prepare options based on channel type
-              const options = {
+          // 5. Recreate text channels in categories
+          for (const cat of serverTemplate.categories) {
+            const newCategory = categoryMap.get(cat.id);
+            for (const ch of cat.channels.filter(c => c.type === ChannelType.GuildText).sort((a, b) => a.position - b.position)) {
+              await message.guild.channels.create({
                 name: ch.name,
-                type: ch.type,
+                type: ChannelType.GuildText,
+                parent: newCategory.id,
+                topic: ch.topic,
+                nsfw: ch.nsfw,
+                rateLimitPerUser: ch.rateLimitPerUser,
+                position: ch.position,
                 permissionOverwrites: ch.permissionOverwrites.map(po => ({
                   id: po.id,
                   allow: BigInt(po.allow),
                   deny: BigInt(po.deny),
                   type: po.type,
                 })),
-              };
-
-              // Only set parent for non-forum channels
-              if (ch.type !== ChannelType.GuildForum) {
-                options.parent = category.id;
-              }
-              // Only set topic/nsfw/rateLimitPerUser for text channels
-              if (ch.type === ChannelType.GuildText) {
-                options.topic = ch.topic;
-                options.nsfw = ch.nsfw;
-                options.rateLimitPerUser = ch.rateLimitPerUser;
-              }
-              // Only set bitrate/userLimit for voice channels
-              if (ch.type === ChannelType.GuildVoice) {
-                options.bitrate = ch.bitrate;
-                options.userLimit = ch.userLimit;
-              }
-              await message.guild.channels.create(options);
+              });
             }
           }
+
+          // 6. Recreate voice channels in categories
+          for (const cat of serverTemplate.categories) {
+            const newCategory = categoryMap.get(cat.id);
+            for (const ch of cat.channels.filter(c => c.type === ChannelType.GuildVoice).sort((a, b) => a.position - b.position)) {
+              await message.guild.channels.create({
+                name: ch.name,
+                type: ChannelType.GuildVoice,
+                parent: newCategory.id,
+                bitrate: ch.bitrate,
+                userLimit: ch.userLimit,
+                position: ch.position,
+                permissionOverwrites: ch.permissionOverwrites.map(po => ({
+                  id: po.id,
+                  allow: BigInt(po.allow),
+                  deny: BigInt(po.deny),
+                  type: po.type,
+                })),
+              });
+            }
+          }
+
+          // 7. Recreate forum channels at top level if Community server
+          if (message.guild.features.includes('COMMUNITY')) {
+            for (const cat of serverTemplate.categories) {
+              for (const ch of cat.channels.filter(c => c.type === ChannelType.GuildForum).sort((a, b) => a.position - b.position)) {
+                await message.guild.channels.create({
+                  name: ch.name,
+                  type: ChannelType.GuildForum,
+                  position: ch.position,
+                  permissionOverwrites: ch.permissionOverwrites.map(po => ({
+                    id: po.id,
+                    allow: BigInt(po.allow),
+                    deny: BigInt(po.deny),
+                    type: po.type,
+                  })),
+                });
+              }
+            }
+          }
+
           delete pendingPaste[message.author.id];
-          // --- REPLY FIX: Only reply if the channel still exists
           if (message.channel && message.guild.channels.cache.has(message.channel.id)) {
             return message.reply('✅ Server structure pasted!');
           }
         } catch (err) {
           console.error(err);
           delete pendingPaste[message.author.id];
-          // --- REPLY FIX: Only reply if the channel still exists
           if (message.channel && message.guild.channels.cache.has(message.channel.id)) {
             return message.reply('❌ Failed to paste server structure.');
           }
