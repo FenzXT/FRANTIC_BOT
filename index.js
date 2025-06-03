@@ -13,7 +13,7 @@ const {
 } = require('discord.js');
 const fs = require('fs');
 
-// Load welcome config
+// Welcome config
 let welcomeConfig;
 try {
   welcomeConfig = require('./welcomeConfig.json');
@@ -28,17 +28,9 @@ try {
   fs.writeFileSync('./welcomeConfig.json', JSON.stringify(welcomeConfig, null, 2));
 }
 
-// Load server copy/paste data
-let serverData = {};
-try {
-  serverData = require('./serverData.json');
-} catch (err) {
-  serverData = {};
-  fs.writeFileSync('./serverData.json', JSON.stringify(serverData, null, 2));
-}
-
-let pendingPaste = {};
 let afkMap = {};
+let serverTemplate = null;
+let pendingPaste = {};
 
 const client = new Client({
   intents: [
@@ -56,7 +48,6 @@ client.once('ready', () => {
 });
 
 client.on('messageCreate', async (message) => {
-  // Ignore bots and DMs
   if (message.author.bot || !message.guild) return;
 
   // --- AFK SYSTEM ---
@@ -79,9 +70,8 @@ client.on('messageCreate', async (message) => {
     });
   }
 
-  // --- HELP COMMAND (PAGINATED, 3 PAGES) ---
+  // --- HELP COMMANDS ---
   if (message.content.startsWith('!help')) {
-    // Page 1 embed
     const helpEmbedPage1 = new EmbedBuilder()
       .setTitle('BOT ALL COMMANDS - PAGE 1')
       .setColor('#7500ff')
@@ -95,7 +85,6 @@ client.on('messageCreate', async (message) => {
       )
       .setFooter({ text: 'FRANTIC BOT !HELP' });
 
-    // Page 2 embed
     const helpEmbedPage2 = new EmbedBuilder()
       .setTitle('BOT ALL COMMANDS - PAGE 2')
       .setColor('#7500ff')
@@ -109,7 +98,6 @@ client.on('messageCreate', async (message) => {
       )
       .setFooter({ text: 'FRANTIC BOT !HELP' });
 
-    // Page 3 embed
     const helpEmbedPage3 = new EmbedBuilder()
       .setTitle('BOT ALL COMMANDS - PAGE 3')
       .setColor('#7500ff')
@@ -119,7 +107,7 @@ client.on('messageCreate', async (message) => {
           name: '!copy-server', 
           value: 'Copies the server structure (roles/channels) for admins\n' +
                  '**Usage:** `!copy-server`\n' +
-                 '**Example:** `!copy-server` - copy roles and channels'
+                 '**Example:** `!copy-server` - copy roles, categories and channels'
         },
         { 
           name: '!paste-server', 
@@ -136,7 +124,6 @@ client.on('messageCreate', async (message) => {
       )
       .setFooter({ text: 'FRANTIC BOT !HELP' });
 
-    // Buttons
     const page1Button = new ButtonBuilder()
       .setCustomId('help_page_1')
       .setLabel('Page 1')
@@ -152,28 +139,21 @@ client.on('messageCreate', async (message) => {
       .setLabel('Page 3')
       .setStyle(ButtonStyle.Secondary);
 
-    // Initial row with Page 2 and Page 3 buttons
     const rowPage1 = new ActionRowBuilder().addComponents(page2Button, page3Button);
-    // Row with Page 1 and Page 3 buttons
     const rowPage2 = new ActionRowBuilder().addComponents(page1Button, page3Button);
-    // Row with Page 1 and Page 2 buttons
     const rowPage3 = new ActionRowBuilder().addComponents(page1Button, page2Button);
 
-    // Send initial message with page 1 embed and Page 2/3 buttons
     const helpMessage = await message.channel.send({ embeds: [helpEmbedPage1], components: [rowPage1] });
 
-    // Create a collector to listen for button interactions for 60 seconds
     const collector = helpMessage.createMessageComponentCollector({
       componentType: ComponentType.Button,
       time: 60000,
     });
 
     collector.on('collect', async interaction => {
-      // Only the user who sent !help can use the buttons
       if (interaction.user.id !== message.author.id) {
         return interaction.reply({ content: "Only the user who used !help can use these buttons.", ephemeral: true });
       }
-
       if (interaction.customId === 'help_page_2') {
         await interaction.update({ embeds: [helpEmbedPage2], components: [rowPage2] });
       } else if (interaction.customId === 'help_page_1') {
@@ -184,7 +164,6 @@ client.on('messageCreate', async (message) => {
     });
 
     collector.on('end', () => {
-      // Disable buttons after timeout
       const disabledRow = new ActionRowBuilder()
         .addComponents(page2Button.setDisabled(true), page3Button.setDisabled(true));
       helpMessage.edit({ components: [disabledRow] }).catch(() => {});
@@ -193,7 +172,156 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  // Kick Command
+  // --- COPY SERVER ---
+  if (message.content === '!copy-server') {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply('❌ Only admins can use this command.');
+    }
+    try {
+      const roles = message.guild.roles.cache
+        .filter(role => role.name !== '@everyone')
+        .map(role => ({
+          name: role.name,
+          color: role.color,
+          hoist: role.hoist,
+          permissions: role.permissions.bitfield,
+          mentionable: role.mentionable,
+          position: role.position,
+        }));
+
+      const categories = message.guild.channels.cache
+        .filter(c => c.type === 4)
+        .map(cat => ({
+          name: cat.name,
+          channels: message.guild.channels.cache
+            .filter(ch => ch.parentId === cat.id)
+            .map(ch => ({
+              name: ch.name,
+              type: ch.type,
+              topic: ch.topic || null,
+              nsfw: ch.nsfw || false,
+              bitrate: ch.bitrate || null,
+              userLimit: ch.userLimit || null,
+              rateLimitPerUser: ch.rateLimitPerUser || 0,
+              permissionOverwrites: ch.permissionOverwrites.cache.map(po => ({
+                id: po.id,
+                allow: po.allow.bitfield,
+                deny: po.deny.bitfield,
+                type: po.type,
+              })),
+            })),
+        }));
+
+      serverTemplate = { roles, categories };
+      fs.writeFileSync('serverTemplate.json', JSON.stringify(serverTemplate, null, 2));
+      message.reply('✅ Server structure copied! Use `!paste-server` in another server to paste.');
+    } catch (err) {
+      console.error(err);
+      message.reply('❌ Failed to copy server structure.');
+    }
+  }
+
+  // --- INTERACTIVE PASTE SERVER ---
+  if (message.content === '!paste-server') {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply('❌ Only admins can use this command.');
+    }
+    if (!serverTemplate && fs.existsSync('serverTemplate.json')) {
+      serverTemplate = JSON.parse(fs.readFileSync('serverTemplate.json'));
+    }
+    if (!serverTemplate) {
+      return message.reply('❌ No server template found. Use `!copy-server` first.');
+    }
+    pendingPaste[message.author.id] = { step: 'roles', deleteRoles: null, deleteChannels: null };
+    return message.reply(
+      "**Paste Options:**\n" +
+      "1️⃣ Delete existing roles before pasting new ones\n" +
+      "2️⃣ Keep existing roles\n" +
+      "Reply with `1` or `2`."
+    );
+  }
+
+  // --- INTERACTIVE PASTE STEPS ---
+  if (pendingPaste[message.author.id]) {
+    const state = pendingPaste[message.author.id];
+    const content = message.content.trim();
+
+    if (state.step === 'roles' && (content === '1' || content === '2')) {
+      state.deleteRoles = content === '1';
+      state.step = 'channels';
+      return message.reply(
+        "**Next:**\n" +
+        "1️⃣ Delete existing channels before pasting new ones\n" +
+        "2️⃣ Keep existing channels\n" +
+        "Reply with `1` or `2`."
+      );
+    }
+
+    if (state.step === 'channels' && (content === '1' || content === '2')) {
+      state.deleteChannels = content === '1';
+      state.step = 'confirm';
+      return message.reply(
+        `**Ready to run!**\nDelete Roles: ${state.deleteRoles ? 'Yes' : 'No'}\nDelete Channels: ${state.deleteChannels ? 'Yes' : 'No'}\n` +
+        "Type `run` to start the process."
+      );
+    }
+
+    if (state.step === 'confirm' && content.toLowerCase() === 'run') {
+      (async () => {
+        try {
+          if (state.deleteRoles) {
+            for (const role of message.guild.roles.cache.values()) {
+              if (role.name !== '@everyone' && !role.managed) {
+                try { await role.delete("Pasting server structure"); } catch {}
+              }
+            }
+          }
+          if (state.deleteChannels) {
+            for (const channel of message.guild.channels.cache.values()) {
+              try { await channel.delete("Pasting server structure"); } catch {}
+            }
+          }
+          for (const roleData of serverTemplate.roles.sort((a, b) => a.position - b.position)) {
+            await message.guild.roles.create({
+              name: roleData.name,
+              color: roleData.color,
+              hoist: roleData.hoist,
+              permissions: BigInt(roleData.permissions),
+              mentionable: roleData.mentionable,
+            });
+          }
+          for (const cat of serverTemplate.categories) {
+            const category = await message.guild.channels.create({
+              name: cat.name,
+              type: 4,
+            });
+            for (const ch of cat.channels) {
+              await message.guild.channels.create({
+                name: ch.name,
+                type: ch.type,
+                parent: category.id,
+                topic: ch.topic,
+                nsfw: ch.nsfw,
+                bitrate: ch.bitrate,
+                userLimit: ch.userLimit,
+                rateLimitPerUser: ch.rateLimitPerUser,
+                permissionOverwrites: ch.permissionOverwrites,
+              });
+            }
+          }
+          delete pendingPaste[message.author.id];
+          return message.reply('✅ Server structure pasted!');
+        } catch (err) {
+          console.error(err);
+          delete pendingPaste[message.author.id];
+          return message.reply('❌ Failed to paste server structure.');
+        }
+      })();
+    }
+    return;
+  }
+
+  // --- MODERATION COMMANDS ---
   if (message.content.startsWith('!kick')) {
     if (!message.member.permissions.has(PermissionsBitField.Flags.KickMembers)) {
       return message.reply('You do not have permission to kick members.');
@@ -213,7 +341,6 @@ client.on('messageCreate', async (message) => {
     }
   }
 
-  // Ban Command
   if (message.content.startsWith('!ban')) {
     if (!message.member.permissions.has(PermissionsBitField.Flags.BanMembers)) {
       return message.reply('You do not have permission to ban members.');
@@ -233,7 +360,6 @@ client.on('messageCreate', async (message) => {
     }
   }
 
-  // Clear Messages Command
   if (message.content.startsWith('!clear')) {
     if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
       return message.reply('You do not have permission to clear messages.');
@@ -255,7 +381,6 @@ client.on('messageCreate', async (message) => {
     }
   }
 
-  // Timeout Command
   if (message.content.startsWith('!timeout')) {
     if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
       return message.reply('You do not have permission to timeout members.');
@@ -277,7 +402,7 @@ client.on('messageCreate', async (message) => {
     }
   }
 
-  // Webhook Send Command
+  // --- WEBHOOK SENDER ---
   if (message.content.startsWith('!createwebhook')) {
     if (!message.member.permissions.has(PermissionsBitField.Flags.ManageWebhooks)) {
       return message.reply('You do not have permission to use webhooks.');
@@ -309,122 +434,7 @@ client.on('messageCreate', async (message) => {
     }
   }
 
-  // --- COPY/PASTE SERVER STRUCTURE WITH SIMULATED MENUS ---
-  if (message.content.toLowerCase() === '!copy-server') {
-    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-      return message.reply("You do not have permission to use this command.");
-    }
-    const guild = message.guild;
-    const roles = guild.roles.cache
-      .filter(role => role.name !== '@everyone')
-      .map(role => ({
-        name: role.name,
-        color: role.color,
-        permissions: role.permissions.bitfield
-      }));
-    const channels = guild.channels.cache.map(channel => ({
-      name: channel.name,
-      type: channel.type,
-      parentId: channel.parentId
-    }));
-
-    serverData[guild.id] = { roles, channels };
-    fs.writeFileSync('./serverData.json', JSON.stringify(serverData, null, 2)); // <-- SAVE TO FILE
-    return message.reply("Server structure copied! You can now use `!paste-server`.");
-  }
-
-  if (message.content.toLowerCase() === '!paste-server') {
-    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-      return message.reply("You do not have permission to use this command.");
-    }
-    if (!serverData[message.guild.id]) {
-      return message.reply("No server data to paste. Use `!copy-server` first.");
-    }
-
-    pendingPaste[message.author.id] = {
-      guildId: message.guild.id,
-      step: 'deleteRoles',
-      deleteRoles: null,
-      deleteChannels: null
-    };
-    return message.reply(
-      "**Select an option for roles:**\n" +
-      "`1` - Delete Roles\n" +
-      "`2` - Do Not Delete Roles\n" +
-      "Reply with `1` or `2`."
-    );
-  }
-
-  // Handle simulated menu replies for paste-server
-  if (pendingPaste[message.author.id]) {
-    const state = pendingPaste[message.author.id];
-    const content = message.content.trim();
-
-    if (state.step === 'deleteRoles' && (content === '1' || content === '2')) {
-      state.deleteRoles = content === '1';
-      state.step = 'deleteChannels';
-      return message.reply(
-        "**Select an option for channels:**\n" +
-        "`1` - Delete Channels\n" +
-        "`2` - Do Not Delete Channels\n" +
-        "Reply with `1` or `2`."
-      );
-    }
-
-    if (state.step === 'deleteChannels' && (content === '1' || content === '2')) {
-      state.deleteChannels = content === '1';
-      state.step = 'confirm';
-      return message.reply(
-        `**Ready to run!**\nDelete Roles: ${state.deleteRoles ? 'Yes' : 'No'}\nDelete Channels: ${state.deleteChannels ? 'Yes' : 'No'}\n` +
-        "Type `run` to proceed."
-      );
-    }
-
-    if (state.step === 'confirm' && content.toLowerCase() === 'run') {
-      // Proceed to paste server structure
-      const guild = message.guild;
-      const data = serverData[guild.id];
-
-      (async () => {
-        if (state.deleteRoles) {
-          for (const role of guild.roles.cache.values()) {
-            if (role.name !== '@everyone' && !role.managed) {
-              try { await role.delete("Pasting server structure"); } catch {}
-            }
-          }
-        }
-        if (state.deleteChannels) {
-          for (const channel of guild.channels.cache.values()) {
-            try { await channel.delete("Pasting server structure"); } catch {}
-          }
-        }
-        for (const roleData of data.roles) {
-          try {
-            await guild.roles.create({
-              name: roleData.name,
-              color: roleData.color,
-              permissions: BigInt(roleData.permissions)
-            });
-          } catch {}
-        }
-        for (const channelData of data.channels) {
-          if (channelData.type === 0) {
-            try {
-              await guild.channels.create({
-                name: channelData.name,
-                type: channelData.type,
-                parent: channelData.parentId
-              });
-            } catch {}
-          }
-        }
-        delete pendingPaste[message.author.id];
-        return message.reply("Server structure pasted!");
-      })();
-    }
-  }
-
-  // Welcome Channel Command
+  // --- WELCOME CONFIG ---
   if (message.content.startsWith('!setchannel') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     const channel = message.mentions.channels.first();
     if (!channel) {
@@ -439,7 +449,6 @@ client.on('messageCreate', async (message) => {
     return message.reply(`Welcome channel set to ${channel}`);
   }
 
-  // Set Welcome Message Command
   if (message.content.startsWith('!setwelcomemsg') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     const newMsg = message.content.slice('!setwelcomemsg '.length);
     if (!newMsg) {
@@ -453,7 +462,6 @@ client.on('messageCreate', async (message) => {
     return message.reply('Welcome message updated!');
   }
 
-  // Set Welcome Color Command
   if (message.content.startsWith('!setwelcomecolor') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     const color = message.content.split(' ')[1];
     if (!color || !/^#[0-9A-Fa-f]{6}$/.test(color)) {
@@ -467,7 +475,6 @@ client.on('messageCreate', async (message) => {
     return message.reply(`Welcome color set to ${color}`);
   }
 
-  // Set Welcome Image Command
   if (message.content.startsWith('!setwelcomeimage') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     const url = message.content.split(' ')[1];
     if (!url || !url.startsWith('http')) {
@@ -482,7 +489,7 @@ client.on('messageCreate', async (message) => {
   }
 });
 
-// Welcome Event Handler
+// --- WELCOME EVENT HANDLER ---
 client.on('guildMemberAdd', async member => {
   if (!welcomeConfig.enabled || !welcomeConfig.channel) return;
   const channel = member.guild.channels.cache.get(welcomeConfig.channel);
@@ -498,7 +505,6 @@ client.on('guildMemberAdd', async member => {
     .replace('{user_created}', userCreated)
     .replace('{join_date}', joinDate);
 
-  // Hardcoded title as requested
   const embed = new EmbedBuilder()
     .setTitle(`Welcome To The ${member.guild.name}!`)
     .setDescription(msg)
