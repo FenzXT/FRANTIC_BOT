@@ -1,4 +1,4 @@
-▪︎ Discord Moderation - Welcome - Webhook Bot!
+▪︎ Discord Moderation - Welcome - Ticket - Webhook Bot!
 
 A Simple Discord Bot Built With Node.js - JavaScript
 
@@ -12,9 +12,11 @@ A Simple Discord Bot Built With Node.js - JavaScript
 
 - Create Webhooks & Send Embedded Messages
 
-- Advanced Copy Server And Paste Without Kicking Members
+- Advanced Copy And Paste Server Without Kicking Members
 
 - Create Customizable Welcome Message By Your Own
+
+- Open Private Ticket Channel
 
 ---
 
@@ -47,6 +49,10 @@ A Simple Discord Bot Built With Node.js - JavaScript
 !paste-server
 
 !afk [reason]
+
+!createticket "headline" "message" "#colorhex"
+
+!setticketrole @role
 
 Welcome Variables:
 
