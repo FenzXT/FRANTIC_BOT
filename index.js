@@ -286,7 +286,7 @@ client.on('messageCreate', async (message) => {
           }
 
           // 2. Recreate roles from lowest to highest position
-          const sortedRoles = serverTemplate.roles.sort((a, b) => a.position - b.position);
+          const sortedRoles = serverTemplate.roles.sort((a, b) => b.position - a.position);
           const newRoles = {}; // Map old role name to new role object
           for (const roleData of sortedRoles) {
             const newRole = await message.guild.roles.create({
