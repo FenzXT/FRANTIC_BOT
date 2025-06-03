@@ -38,7 +38,7 @@ try {
 }
 
 let pendingPaste = {};
-let afkMap = {}; // { userId: { reason: string, timestamp: Date } }
+let afkMap = {};
 
 const client = new Client({
   intents: [
@@ -119,13 +119,13 @@ client.on('messageCreate', async (message) => {
           name: '!copy-server', 
           value: 'Copies the server structure (roles/channels) for admins\n' +
                  '**Usage:** `!copy-server`\n' +
-                 '**Example:** `!copy-server` - copy like roles and channels'
+                 '**Example:** `!copy-server` - copy roles and channels'
         },
         { 
           name: '!paste-server', 
           value: 'Pastes the server structure with options for admins\n' +
                  '**Usage:** `!paste-server`\n' +
-                 '**Example:** `!paste-server` - you can edit what you want to paste'
+                 '**Example:** `!paste-server` - paste with your need'
         },
         { 
           name: '!afk [reason]', 
