@@ -29,6 +29,15 @@ try {
   fs.writeFileSync('./welcomeConfig.json', JSON.stringify(welcomeConfig, null, 2));
 }
 
+// --- TICKET CONFIG ---
+let ticketConfig;
+try {
+  ticketConfig = require('./ticketConfig.json');
+} catch (err) {
+  ticketConfig = { supportRole: "" };
+  fs.writeFileSync('./ticketConfig.json', JSON.stringify(ticketConfig, null, 2));
+}
+
 let afkMap = {};
 let serverTemplate = null;
 let pendingPaste = {};
@@ -50,6 +59,51 @@ client.once('ready', () => {
 
 client.on('messageCreate', async (message) => {
   if (message.author.bot || !message.guild) return;
+
+  // --- TICKET SYSTEM COMMANDS ---
+  // Set the ticket support role (admin only)
+  if (message.content.startsWith('!setticketrole') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    const role = message.mentions.roles.first();
+    if (!role) {
+      return message.reply(
+        '❌ Usage: `!setticketrole @Support`\n' +
+        'Example: `!setticketrole @Support`'
+      );
+    }
+    ticketConfig.supportRole = role.id;
+    fs.writeFileSync('./ticketConfig.json', JSON.stringify(ticketConfig, null, 2));
+    return message.reply(`Support role set to ${role}`);
+  }
+
+  // Admin creates a ticket panel with button
+  if (message.content.startsWith('!createticket') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    const regex = /!createticket\s+"([^"]+)"\s+"([^"]+)"\s+"(#[0-9A-Fa-f]{6})"/;
+    const match = message.content.match(regex);
+    if (!match) {
+      return message.reply(
+        '❌ Usage: `!createticket "headline" "message" "#colorhex"`\n' +
+        'Example: `!createticket "Need Help?" "Click the button to open a ticket!" "#2ecc71"`'
+      );
+    }
+    const headline = match[1];
+    const ticketMsg = match[2];
+    const embedColor = match[3];
+
+    const embed = new EmbedBuilder()
+      .setTitle(headline)
+      .setDescription(ticketMsg)
+      .setColor(embedColor);
+
+    const button = new ButtonBuilder()
+      .setCustomId('create_ticket')
+      .setLabel('Create Ticket')
+      .setStyle(ButtonStyle.Success);
+
+    const row = new ActionRowBuilder().addComponents(button);
+
+    await message.channel.send({ embeds: [embed], components: [row] });
+    return;
+  }
 
   // --- AFK SYSTEM ---
   if (message.content.startsWith('!afk')) {
@@ -121,6 +175,18 @@ client.on('messageCreate', async (message) => {
           value: 'Sets your AFK status with an optional reason. Others will see it when they mention you.\n' +
                  '**Usage:** `!afk [reason]`\n' +
                  '**Example:** `!afk out of home`'
+        },
+        { 
+          name: '!setticketrole @role',
+          value: 'Sets the support role for tickets (admin only)\n' +
+                 '**Usage:** `!setticketrole @Support`\n' +
+                 '**Example:** `!setticketrole @Support`'
+        },
+        { 
+          name: '!createticket "headline" "message" "#colorhex"',
+          value: 'Creates a ticket panel with a button (admin only)\n' +
+                 '**Usage:** `!createticket "headline" "message" "#colorhex"`\n' +
+                 '**Example:** `!createticket "Need Help?" "Click the button to open a ticket!" "#2ecc71"`'
         }
       )
       .setFooter({ text: 'FRANTIC BOT !HELP' });
@@ -601,6 +667,105 @@ client.on('messageCreate', async (message) => {
     welcomeConfig.image = url;
     fs.writeFileSync('./welcomeConfig.json', JSON.stringify(welcomeConfig, null, 2));
     return message.reply(`Welcome image set!`);
+  }
+});
+
+// --- TICKET SYSTEM INTERACTION HANDLER ---
+client.on('interactionCreate', async interaction => {
+  // --- Create Ticket Button ---
+  if (interaction.isButton() && interaction.customId === 'create_ticket') {
+    // Only one open ticket per user
+    const existing = interaction.guild.channels.cache.find(c =>
+      c.name === `ticket-${interaction.user.id}`
+    );
+    if (existing) {
+      return interaction.reply({ content: 'You already have an open ticket!', ephemeral: true });
+    }
+
+    if (!ticketConfig.supportRole) {
+      return interaction.reply({ content: 'Support role is not set. Please ask an admin to set it with `!setticketrole @role`.', ephemeral: true });
+    }
+
+    // Create the ticket channel
+    const channel = await interaction.guild.channels.create({
+      name: `ticket-${interaction.user.id}`,
+      type: ChannelType.GuildText,
+      permissionOverwrites: [
+        {
+          id: interaction.guild.roles.everyone,
+          deny: [PermissionsBitField.Flags.ViewChannel]
+        },
+        {
+          id: interaction.user.id,
+          allow: [
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.SendMessages,
+            PermissionsBitField.Flags.ReadMessageHistory
+          ]
+        },
+        {
+          id: ticketConfig.supportRole,
+          allow: [
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.SendMessages,
+            PermissionsBitField.Flags.ReadMessageHistory
+          ]
+        },
+        // Allow all admins
+        ...interaction.guild.roles.cache
+          .filter(role => role.permissions.has(PermissionsBitField.Flags.Administrator))
+          .map(role => ({
+            id: role.id,
+            allow: [
+              PermissionsBitField.Flags.ViewChannel,
+              PermissionsBitField.Flags.SendMessages,
+              PermissionsBitField.Flags.ReadMessageHistory
+            ]
+          }))
+      ]
+    });
+
+    // Send greeting and delete button
+    await channel.send({
+      content: `<@&${ticketConfig.supportRole}> Ticket created by <@${interaction.user.id}>`,
+      allowedMentions: { roles: [ticketConfig.supportRole] }
+    });
+
+    await channel.send('Please describe your issue in detail. Our support team will assist you shortly.');
+
+    // Delete Ticket button
+    const deleteButton = new ButtonBuilder()
+      .setCustomId('delete_ticket')
+      .setLabel('Delete Ticket')
+      .setStyle(ButtonStyle.Danger);
+
+    const deleteRow = new ActionRowBuilder().addComponents(deleteButton);
+
+    await channel.send({
+      content: 'Click the button below to delete this ticket when your issue is resolved.',
+      components: [deleteRow]
+    });
+
+    await interaction.reply({ content: `Your ticket has been created: ${channel}`, ephemeral: true });
+    return;
+  }
+
+  // --- Delete Ticket Button ---
+  if (interaction.isButton() && interaction.customId === 'delete_ticket') {
+    const member = await interaction.guild.members.fetch(interaction.user.id);
+    const isAdmin = member.permissions.has(PermissionsBitField.Flags.Administrator);
+    const isSupport = ticketConfig.supportRole && member.roles.cache.has(ticketConfig.supportRole);
+    const isCreator = interaction.channel.name === `ticket-${interaction.user.id}`;
+
+    if (!(isAdmin || isSupport || isCreator)) {
+      return interaction.reply({ content: 'You do not have permission to delete this ticket.', ephemeral: true });
+    }
+
+    await interaction.reply({ content: 'Deleting this ticket...', ephemeral: true });
+    setTimeout(() => {
+      interaction.channel.delete('Ticket closed');
+    }, 1500);
+    return;
   }
 });
 
