@@ -201,6 +201,7 @@ client.on('messageCreate', async (message) => {
             .filter(ch => ch.parentId === cat.id)
             .sort((a, b) => a.rawPosition - b.rawPosition)
             .map(ch => ({
+              id: ch.id,
               name: ch.name,
               type: ch.type,
               topic: ch.topic || null,
@@ -285,7 +286,7 @@ client.on('messageCreate', async (message) => {
             }
           }
 
-          // 2. Recreate roles from lowest to highest position
+          // 2. Recreate roles from highest to lowest position (unchanged)
           const sortedRoles = serverTemplate.roles.sort((a, b) => b.position - a.position);
           const newRoles = {}; // Map old role name to new role object
           for (const roleData of sortedRoles) {
@@ -310,34 +311,45 @@ client.on('messageCreate', async (message) => {
           // 4. Recreate categories first and map old to new
           const categoryMap = new Map(); // oldCategoryId -> newCategory
           const sortedCategories = serverTemplate.categories.sort((a, b) => a.position - b.position);
+
           for (const cat of sortedCategories) {
-            const newCategory = await message.guild.channels.create({
-              name: cat.name,
-              type: ChannelType.GuildCategory,
-              position: cat.position,
-            });
-            categoryMap.set(cat.id, newCategory);
+            try {
+              const newCategory = await message.guild.channels.create({
+                name: cat.name,
+                type: ChannelType.GuildCategory,
+                position: cat.position,
+              });
+              categoryMap.set(cat.id, newCategory);
+            } catch (err) {
+              console.error(`Failed to create category "${cat.name}":`, err);
+            }
           }
 
           // 5. Recreate text channels in categories
+          const channelMap = new Map(); // oldChannelId -> newChannel
           for (const cat of serverTemplate.categories) {
             const newCategory = categoryMap.get(cat.id);
             for (const ch of cat.channels.filter(c => c.type === ChannelType.GuildText).sort((a, b) => a.position - b.position)) {
-              await message.guild.channels.create({
-                name: ch.name,
-                type: ChannelType.GuildText,
-                parent: newCategory.id,
-                topic: ch.topic,
-                nsfw: ch.nsfw,
-                rateLimitPerUser: ch.rateLimitPerUser,
-                position: ch.position,
-                permissionOverwrites: ch.permissionOverwrites.map(po => ({
-                  id: po.id,
-                  allow: BigInt(po.allow),
-                  deny: BigInt(po.deny),
-                  type: po.type,
-                })),
-              });
+              try {
+                const newTextChannel = await message.guild.channels.create({
+                  name: ch.name,
+                  type: ChannelType.GuildText,
+                  parent: newCategory.id,
+                  topic: ch.topic,
+                  nsfw: ch.nsfw,
+                  rateLimitPerUser: ch.rateLimitPerUser,
+                  position: ch.position,
+                  permissionOverwrites: ch.permissionOverwrites.map(po => ({
+                    id: po.id, // For roles, this is fine as-is per your request
+                    allow: BigInt(po.allow),
+                    deny: BigInt(po.deny),
+                    type: po.type,
+                  })),
+                });
+                channelMap.set(ch.id, newTextChannel);
+              } catch (err) {
+                console.error(`Failed to create text channel "${ch.name}":`, err);
+              }
             }
           }
 
@@ -345,30 +357,13 @@ client.on('messageCreate', async (message) => {
           for (const cat of serverTemplate.categories) {
             const newCategory = categoryMap.get(cat.id);
             for (const ch of cat.channels.filter(c => c.type === ChannelType.GuildVoice).sort((a, b) => a.position - b.position)) {
-              await message.guild.channels.create({
-                name: ch.name,
-                type: ChannelType.GuildVoice,
-                parent: newCategory.id,
-                bitrate: ch.bitrate,
-                userLimit: ch.userLimit,
-                position: ch.position,
-                permissionOverwrites: ch.permissionOverwrites.map(po => ({
-                  id: po.id,
-                  allow: BigInt(po.allow),
-                  deny: BigInt(po.deny),
-                  type: po.type,
-                })),
-              });
-            }
-          }
-
-          // 7. Recreate forum channels at top level if Community server
-          if (message.guild.features.includes('COMMUNITY')) {
-            for (const cat of serverTemplate.categories) {
-              for (const ch of cat.channels.filter(c => c.type === ChannelType.GuildForum).sort((a, b) => a.position - b.position)) {
-                await message.guild.channels.create({
+              try {
+                const newVoiceChannel = await message.guild.channels.create({
                   name: ch.name,
-                  type: ChannelType.GuildForum,
+                  type: ChannelType.GuildVoice,
+                  parent: newCategory.id,
+                  bitrate: ch.bitrate,
+                  userLimit: ch.userLimit,
                   position: ch.position,
                   permissionOverwrites: ch.permissionOverwrites.map(po => ({
                     id: po.id,
@@ -377,6 +372,35 @@ client.on('messageCreate', async (message) => {
                     type: po.type,
                   })),
                 });
+                channelMap.set(ch.id, newVoiceChannel);
+              } catch (err) {
+                console.error(`Failed to create voice channel "${ch.name}":`, err);
+              }
+            }
+          }
+
+          // 7. Recreate forum channels in categories (fixed!)
+          if (message.guild.features.includes('COMMUNITY')) {
+            for (const cat of serverTemplate.categories) {
+              const newCategory = categoryMap.get(cat.id);
+              for (const ch of cat.channels.filter(c => c.type === ChannelType.GuildForum).sort((a, b) => a.position - b.position)) {
+                try {
+                  const newForumChannel = await message.guild.channels.create({
+                    name: ch.name,
+                    type: ChannelType.GuildForum,
+                    parent: newCategory.id, // <-- THIS FIXES THE ISSUE!
+                    position: ch.position,
+                    permissionOverwrites: ch.permissionOverwrites.map(po => ({
+                      id: po.id,
+                      allow: BigInt(po.allow),
+                      deny: BigInt(po.deny),
+                      type: po.type,
+                    })),
+                  });
+                  channelMap.set(ch.id, newForumChannel);
+                } catch (err) {
+                  console.error(`Failed to create forum channel "${ch.name}":`, err);
+                }
               }
             }
           }
