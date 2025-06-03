@@ -28,11 +28,16 @@ try {
   fs.writeFileSync('./welcomeConfig.json', JSON.stringify(welcomeConfig, null, 2));
 }
 
-// Server copy/paste data
+// Load server copy/paste data
 let serverData = {};
-let pendingPaste = {};
+try {
+  serverData = require('./serverData.json');
+} catch (err) {
+  serverData = {};
+  fs.writeFileSync('./serverData.json', JSON.stringify(serverData, null, 2));
+}
 
-// AFK system
+let pendingPaste = {};
 let afkMap = {}; // { userId: { reason: string, timestamp: Date } }
 
 const client = new Client({
@@ -55,20 +60,15 @@ client.on('messageCreate', async (message) => {
   if (message.author.bot || !message.guild) return;
 
   // --- AFK SYSTEM ---
-  // Set AFK
   if (message.content.startsWith('!afk')) {
-    const reason = message.content.slice(5).trim() || "I'm AFK right now.";
+    const reason = message.content.slice(5).trim() || "I'm AFK Don't Ping Me!.";
     afkMap[message.author.id] = { reason, timestamp: Date.now() };
     return message.reply(`You are now AFK: ${reason}`);
   }
-
-  // Remove AFK if user sends any message (except !afk)
   if (afkMap[message.author.id] && !message.content.startsWith('!afk')) {
     delete afkMap[message.author.id];
     message.reply("Welcome back! Your AFK status has been removed.");
   }
-
-  // Notify if mentioning an AFK user
   if (message.mentions.users.size > 0) {
     message.mentions.users.forEach(user => {
       if (afkMap[user.id]) {
@@ -119,19 +119,19 @@ client.on('messageCreate', async (message) => {
           name: '!copy-server', 
           value: 'Copies the server structure (roles/channels) for admins\n' +
                  '**Usage:** `!copy-server`\n' +
-                 '**Example:** `!copy-server`'
+                 '**Example:** `!copy-server` - copy like roles and channels'
         },
         { 
           name: '!paste-server', 
           value: 'Pastes the server structure with options for admins\n' +
                  '**Usage:** `!paste-server`\n' +
-                 '**Example:** `!paste-server`'
+                 '**Example:** `!paste-server` - you can edit what you want to paste'
         },
         { 
           name: '!afk [reason]', 
           value: 'Sets your AFK status with an optional reason. Others will see it when they mention you.\n' +
                  '**Usage:** `!afk [reason]`\n' +
-                 '**Example:** `!afk Out of home`'
+                 '**Example:** `!afk out of home`'
         }
       )
       .setFooter({ text: 'FRANTIC BOT !HELP' });
@@ -329,6 +329,7 @@ client.on('messageCreate', async (message) => {
     }));
 
     serverData[guild.id] = { roles, channels };
+    fs.writeFileSync('./serverData.json', JSON.stringify(serverData, null, 2)); // <-- SAVE TO FILE
     return message.reply("Server structure copied! You can now use `!paste-server`.");
   }
 
