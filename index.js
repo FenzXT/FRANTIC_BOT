@@ -184,7 +184,7 @@ client.on('messageCreate', async (message) => {
           name: role.name,
           color: role.color,
           hoist: role.hoist,
-          permissions: role.permissions.bitfield,
+          permissions: role.permissions.bitfield.toString(), // FIXED
           mentionable: role.mentionable,
           position: role.position,
         }));
@@ -205,8 +205,8 @@ client.on('messageCreate', async (message) => {
               rateLimitPerUser: ch.rateLimitPerUser || 0,
               permissionOverwrites: ch.permissionOverwrites.cache.map(po => ({
                 id: po.id,
-                allow: po.allow.bitfield,
-                deny: po.deny.bitfield,
+                allow: po.allow.bitfield.toString(), // FIXED
+                deny: po.deny.bitfield.toString(),   // FIXED
                 type: po.type,
               })),
             })),
@@ -286,7 +286,7 @@ client.on('messageCreate', async (message) => {
               name: roleData.name,
               color: roleData.color,
               hoist: roleData.hoist,
-              permissions: BigInt(roleData.permissions),
+              permissions: BigInt(roleData.permissions), // FIXED
               mentionable: roleData.mentionable,
             });
           }
@@ -305,7 +305,12 @@ client.on('messageCreate', async (message) => {
                 bitrate: ch.bitrate,
                 userLimit: ch.userLimit,
                 rateLimitPerUser: ch.rateLimitPerUser,
-                permissionOverwrites: ch.permissionOverwrites,
+                permissionOverwrites: ch.permissionOverwrites.map(po => ({
+                  id: po.id,
+                  allow: BigInt(po.allow), // FIXED
+                  deny: BigInt(po.deny),   // FIXED
+                  type: po.type,
+                })),
               });
             }
           }
