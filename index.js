@@ -9,7 +9,8 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  ComponentType
+  ComponentType,
+  ChannelType
 } = require('discord.js');
 const fs = require('fs');
 
@@ -184,13 +185,13 @@ client.on('messageCreate', async (message) => {
           name: role.name,
           color: role.color,
           hoist: role.hoist,
-          permissions: role.permissions.bitfield.toString(), // FIXED
+          permissions: role.permissions.bitfield.toString(),
           mentionable: role.mentionable,
           position: role.position,
         }));
 
       const categories = message.guild.channels.cache
-        .filter(c => c.type === 4)
+        .filter(c => c.type === ChannelType.GuildCategory)
         .map(cat => ({
           name: cat.name,
           channels: message.guild.channels.cache
@@ -205,8 +206,8 @@ client.on('messageCreate', async (message) => {
               rateLimitPerUser: ch.rateLimitPerUser || 0,
               permissionOverwrites: ch.permissionOverwrites.cache.map(po => ({
                 id: po.id,
-                allow: po.allow.bitfield.toString(), // FIXED
-                deny: po.deny.bitfield.toString(),   // FIXED
+                allow: po.allow.bitfield.toString(),
+                deny: po.deny.bitfield.toString(),
                 type: po.type,
               })),
             })),
@@ -286,32 +287,43 @@ client.on('messageCreate', async (message) => {
               name: roleData.name,
               color: roleData.color,
               hoist: roleData.hoist,
-              permissions: BigInt(roleData.permissions), // FIXED
+              permissions: BigInt(roleData.permissions),
               mentionable: roleData.mentionable,
             });
           }
           for (const cat of serverTemplate.categories) {
+            // Create category
             const category = await message.guild.channels.create({
               name: cat.name,
-              type: 4,
+              type: ChannelType.GuildCategory,
             });
+
             for (const ch of cat.channels) {
-              await message.guild.channels.create({
+              // Prepare options based on channel type
+              const options = {
                 name: ch.name,
                 type: ch.type,
                 parent: category.id,
-                topic: ch.topic,
-                nsfw: ch.nsfw,
-                bitrate: ch.bitrate,
-                userLimit: ch.userLimit,
-                rateLimitPerUser: ch.rateLimitPerUser,
                 permissionOverwrites: ch.permissionOverwrites.map(po => ({
                   id: po.id,
-                  allow: BigInt(po.allow), // FIXED
-                  deny: BigInt(po.deny),   // FIXED
+                  allow: BigInt(po.allow),
+                  deny: BigInt(po.deny),
                   type: po.type,
                 })),
-              });
+              };
+
+              // Only set topic/nsfw/rateLimitPerUser for text channels
+              if (ch.type === ChannelType.GuildText) {
+                options.topic = ch.topic;
+                options.nsfw = ch.nsfw;
+                options.rateLimitPerUser = ch.rateLimitPerUser;
+              }
+              // Only set bitrate/userLimit for voice channels
+              if (ch.type === ChannelType.GuildVoice) {
+                options.bitrate = ch.bitrate;
+                options.userLimit = ch.userLimit;
+              }
+              await message.guild.channels.create(options);
             }
           }
           delete pendingPaste[message.author.id];
