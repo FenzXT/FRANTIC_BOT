@@ -14,7 +14,7 @@ const {
 } = require('discord.js');
 const fs = require('fs');
 
-// Welcome config
+// --- WELCOME CONFIG ---
 let welcomeConfig;
 try {
   welcomeConfig = require('./welcomeConfig.json');
@@ -106,13 +106,13 @@ client.on('messageCreate', async (message) => {
       .addFields(
         { 
           name: '!copy-server', 
-          value: 'Copies the server structure (roles/channels) for admins\n' +
+          value: 'Copies the server structure (roles/channels, including Announcement, Stage, Forums) for admins\n' +
                  '**Usage:** `!copy-server`\n' +
-                 '**Example:** `!copy-server` - copy roles, categories and channels'
+                 '**Example:** `!copy-server` - copy roles, categories, and all channel types'
         },
         { 
           name: '!paste-server', 
-          value: 'Pastes the server structure with options for admins\n' +
+          value: 'Pastes the server structure with options for admins (supports Announcement, Stage, Forums)\n' +
                  '**Usage:** `!paste-server`\n' +
                  '**Example:** `!paste-server` - paste with your need'
         },
@@ -216,6 +216,8 @@ client.on('messageCreate', async (message) => {
                 deny: po.deny.bitfield.toString(),
                 type: po.type,
               })),
+              rtcRegion: ch.rtcRegion || null,
+              videoQualityMode: ch.videoQualityMode || null,
             })),
         }));
 
@@ -280,15 +282,15 @@ client.on('messageCreate', async (message) => {
           if (state.deleteRoles) {
             const rolesToDelete = message.guild.roles.cache
               .filter(role => role.name !== '@everyone' && !role.managed)
-              .sort((a, b) => b.position - a.position); // Delete from top down
+              .sort((a, b) => b.position - a.position);
             for (const role of rolesToDelete.values()) {
               try { await role.delete("Pasting server structure"); } catch (e) {}
             }
           }
 
-          // 2. Recreate roles from highest to lowest position (unchanged)
+          // 2. Recreate roles
           const sortedRoles = serverTemplate.roles.sort((a, b) => b.position - a.position);
-          const newRoles = {}; // Map old role name to new role object
+          const newRoles = {};
           for (const roleData of sortedRoles) {
             const newRole = await message.guild.roles.create({
               name: roleData.name,
@@ -308,10 +310,9 @@ client.on('messageCreate', async (message) => {
             }
           }
 
-          // 4. Recreate categories first and map old to new
-          const categoryMap = new Map(); // oldCategoryId -> newCategory
+          // 4. Recreate categories
+          const categoryMap = new Map();
           const sortedCategories = serverTemplate.categories.sort((a, b) => a.position - b.position);
-
           for (const cat of sortedCategories) {
             try {
               const newCategory = await message.guild.channels.create({
@@ -325,70 +326,22 @@ client.on('messageCreate', async (message) => {
             }
           }
 
-          // 5. Recreate text channels in categories
-          const channelMap = new Map(); // oldChannelId -> newChannel
+          // 5. Recreate all channel types in categories
+          const channelMap = new Map();
           for (const cat of serverTemplate.categories) {
             const newCategory = categoryMap.get(cat.id);
-            for (const ch of cat.channels.filter(c => c.type === ChannelType.GuildText).sort((a, b) => a.position - b.position)) {
+            const sortedChans = cat.channels.sort((a, b) => a.position - b.position);
+            for (const ch of sortedChans) {
               try {
-                const newTextChannel = await message.guild.channels.create({
-                  name: ch.name,
-                  type: ChannelType.GuildText,
-                  parent: newCategory.id,
-                  topic: ch.topic,
-                  nsfw: ch.nsfw,
-                  rateLimitPerUser: ch.rateLimitPerUser,
-                  position: ch.position,
-                  permissionOverwrites: ch.permissionOverwrites.map(po => ({
-                    id: po.id, // For roles, this is fine as-is per your request
-                    allow: BigInt(po.allow),
-                    deny: BigInt(po.deny),
-                    type: po.type,
-                  })),
-                });
-                channelMap.set(ch.id, newTextChannel);
-              } catch (err) {
-                console.error(`Failed to create text channel "${ch.name}":`, err);
-              }
-            }
-          }
-
-          // 6. Recreate voice channels in categories
-          for (const cat of serverTemplate.categories) {
-            const newCategory = categoryMap.get(cat.id);
-            for (const ch of cat.channels.filter(c => c.type === ChannelType.GuildVoice).sort((a, b) => a.position - b.position)) {
-              try {
-                const newVoiceChannel = await message.guild.channels.create({
-                  name: ch.name,
-                  type: ChannelType.GuildVoice,
-                  parent: newCategory.id,
-                  bitrate: ch.bitrate,
-                  userLimit: ch.userLimit,
-                  position: ch.position,
-                  permissionOverwrites: ch.permissionOverwrites.map(po => ({
-                    id: po.id,
-                    allow: BigInt(po.allow),
-                    deny: BigInt(po.deny),
-                    type: po.type,
-                  })),
-                });
-                channelMap.set(ch.id, newVoiceChannel);
-              } catch (err) {
-                console.error(`Failed to create voice channel "${ch.name}":`, err);
-              }
-            }
-          }
-
-          // 7. Recreate forum channels in categories (fixed!)
-          if (message.guild.features.includes('COMMUNITY')) {
-            for (const cat of serverTemplate.categories) {
-              const newCategory = categoryMap.get(cat.id);
-              for (const ch of cat.channels.filter(c => c.type === ChannelType.GuildForum).sort((a, b) => a.position - b.position)) {
-                try {
-                  const newForumChannel = await message.guild.channels.create({
+                let newChannel;
+                if (ch.type === ChannelType.GuildText) {
+                  newChannel = await message.guild.channels.create({
                     name: ch.name,
-                    type: ChannelType.GuildForum,
-                    parent: newCategory.id, // <-- THIS FIXES THE ISSUE!
+                    type: ChannelType.GuildText,
+                    parent: newCategory.id,
+                    topic: ch.topic,
+                    nsfw: ch.nsfw,
+                    rateLimitPerUser: ch.rateLimitPerUser,
                     position: ch.position,
                     permissionOverwrites: ch.permissionOverwrites.map(po => ({
                       id: po.id,
@@ -397,12 +350,74 @@ client.on('messageCreate', async (message) => {
                       type: po.type,
                     })),
                   });
-                  channelMap.set(ch.id, newForumChannel);
-                } catch (err) {
-                  console.error(`Failed to create forum channel "${ch.name}":`, err);
+                } else if (ch.type === ChannelType.GuildVoice) {
+                  newChannel = await message.guild.channels.create({
+                    name: ch.name,
+                    type: ChannelType.GuildVoice,
+                    parent: newCategory.id,
+                    bitrate: ch.bitrate,
+                    userLimit: ch.userLimit,
+                    position: ch.position,
+                    permissionOverwrites: ch.permissionOverwrites.map(po => ({
+                      id: po.id,
+                      allow: BigInt(po.allow),
+                      deny: BigInt(po.deny),
+                      type: po.type,
+                    })),
+                  });
+                } else if (ch.type === ChannelType.GuildAnnouncement) {
+                  newChannel = await message.guild.channels.create({
+                    name: ch.name,
+                    type: ChannelType.GuildAnnouncement,
+                    parent: newCategory.id,
+                    topic: ch.topic,
+                    nsfw: ch.nsfw,
+                    position: ch.position,
+                    permissionOverwrites: ch.permissionOverwrites.map(po => ({
+                      id: po.id,
+                      allow: BigInt(po.allow),
+                      deny: BigInt(po.deny),
+                      type: po.type,
+                    })),
+                  });
+                } else if (ch.type === ChannelType.GuildStageVoice) {
+                  newChannel = await message.guild.channels.create({
+                    name: ch.name,
+                    type: ChannelType.GuildStageVoice,
+                    parent: newCategory.id,
+                    position: ch.position,
+                    permissionOverwrites: ch.permissionOverwrites.map(po => ({
+                      id: po.id,
+                      allow: BigInt(po.allow),
+                      deny: BigInt(po.deny),
+                      type: po.type,
+                    })),
+                  });
+                } else if (ch.type === ChannelType.GuildForum) {
+                  newChannel = await message.guild.channels.create({
+                    name: ch.name,
+                    type: ChannelType.GuildForum,
+                    parent: newCategory.id,
+                    position: ch.position,
+                    permissionOverwrites: ch.permissionOverwrites.map(po => ({
+                      id: po.id,
+                      allow: BigInt(po.allow),
+                      deny: BigInt(po.deny),
+                      type: po.type,
+                    })),
+                  });
                 }
+                if (newChannel) channelMap.set(ch.id, newChannel);
+              } catch (err) {
+                console.error(`Failed to create channel "${ch.name}":`, err);
               }
             }
+          }
+
+          // 6. Notify only in the command channel
+          const completedMessage = '✅ **Server structure paste operation completed!**';
+          if (message.channel && message.guild.channels.cache.has(message.channel.id)) {
+            await message.channel.send(completedMessage);
           }
 
           delete pendingPaste[message.author.id];
