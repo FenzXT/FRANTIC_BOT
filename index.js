@@ -303,7 +303,6 @@ client.on('messageCreate', async (message) => {
               const options = {
                 name: ch.name,
                 type: ch.type,
-                parent: category.id,
                 permissionOverwrites: ch.permissionOverwrites.map(po => ({
                   id: po.id,
                   allow: BigInt(po.allow),
@@ -312,6 +311,10 @@ client.on('messageCreate', async (message) => {
                 })),
               };
 
+              // Only set parent for non-forum channels
+              if (ch.type !== ChannelType.GuildForum) {
+                options.parent = category.id;
+              }
               // Only set topic/nsfw/rateLimitPerUser for text channels
               if (ch.type === ChannelType.GuildText) {
                 options.topic = ch.topic;
@@ -327,11 +330,17 @@ client.on('messageCreate', async (message) => {
             }
           }
           delete pendingPaste[message.author.id];
-          return message.reply('✅ Server structure pasted!');
+          // --- REPLY FIX: Only reply if the channel still exists
+          if (message.channel && message.guild.channels.cache.has(message.channel.id)) {
+            return message.reply('✅ Server structure pasted!');
+          }
         } catch (err) {
           console.error(err);
           delete pendingPaste[message.author.id];
-          return message.reply('❌ Failed to paste server structure.');
+          // --- REPLY FIX: Only reply if the channel still exists
+          if (message.channel && message.guild.channels.cache.has(message.channel.id)) {
+            return message.reply('❌ Failed to paste server structure.');
+          }
         }
       })();
     }
