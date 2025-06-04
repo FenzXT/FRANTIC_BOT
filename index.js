@@ -710,11 +710,11 @@ client.on('interactionCreate', async interaction => {
 
     // Send greeting and delete button
     await channel.send({
-      content: `<@&${ticketConfig.supportRole}> TICKET HAS BEEN REQUESTED BY <@${interaction.user.id}>`,
+      content: `<@&${ticketConfig.supportRole}> PINGED BY <@${interaction.user.id}>`,
       allowedMentions: { roles: [ticketConfig.supportRole] }
     });
 
-    await channel.send('PLEASE HAVE SOME PATIENCE!');
+    await channel.send('`CLICK THE BUTTON BELOW TO DELETE THIS TICKET CHANNEL WHEN YOUR ISSUE HAS BEEN RESOLVED.`');
 
     // Delete Ticket button
     const deleteButton = new ButtonBuilder()
@@ -725,7 +725,7 @@ client.on('interactionCreate', async interaction => {
     const deleteRow = new ActionRowBuilder().addComponents(deleteButton);
 
     await channel.send({
-      content: 'CLICK THE BUTTON BELOW TO DELETE THIS TICKET CHANNEL WHEN YOUR ISSUE HAS BEEN RESOLVED.',
+      content: '',
       components: [deleteRow]
     });
 
