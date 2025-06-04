@@ -714,7 +714,7 @@ client.on('interactionCreate', async interaction => {
       allowedMentions: { roles: [ticketConfig.supportRole] }
     });
 
-    await channel.send('');
+    await channel.send('PLEASE HAVE SOME PATIENCE');
 
     // Delete Ticket button
     const deleteButton = new ButtonBuilder()
