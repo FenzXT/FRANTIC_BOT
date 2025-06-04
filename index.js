@@ -710,11 +710,11 @@ client.on('interactionCreate', async interaction => {
 
     // Send greeting and delete button
     await channel.send({
-      content: `<@&${ticketConfig.supportRole}> Ticket created by <@${interaction.user.id}>`,
+      content: `<@&${ticketConfig.supportRole}> TICKET HAS BEEN REQUESTED BY <@${interaction.user.id}>`,
       allowedMentions: { roles: [ticketConfig.supportRole] }
     });
 
-    await channel.send('Please describe your issue in detail. Our support team will assist you shortly.');
+    await channel.send('');
 
     // Delete Ticket button
     const deleteButton = new ButtonBuilder()
