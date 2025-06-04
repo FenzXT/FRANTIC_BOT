@@ -695,47 +695,49 @@ client.on('interactionCreate', async interaction => {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
       try {
-        // Create the ticket channel
+        // Create the ticket channel with explicit type for each overwrite
+        const permissionOverwrites = [
+          {
+            id: interaction.guild.id,
+            deny: [PermissionsBitField.Flags.ViewChannel],
+            type: 'role'
+          },
+          {
+            id: interaction.user.id,
+            allow: [
+              PermissionsBitField.Flags.ViewChannel,
+              PermissionsBitField.Flags.SendMessages,
+              PermissionsBitField.Flags.ReadMessageHistory
+            ],
+            type: 'member'
+          },
+          {
+            id: ticketConfig.supportRole,
+            allow: [
+              PermissionsBitField.Flags.ViewChannel,
+              PermissionsBitField.Flags.SendMessages,
+              PermissionsBitField.Flags.ReadMessageHistory
+            ],
+            type: 'role'
+          },
+          // Allow all admins
+          ...interaction.guild.roles.cache
+            .filter(role => role.permissions.has(PermissionsBitField.Flags.Administrator))
+            .map(role => ({
+              id: role.id,
+              allow: [
+                PermissionsBitField.Flags.ViewChannel,
+                PermissionsBitField.Flags.SendMessages,
+                PermissionsBitField.Flags.ReadMessageHistory
+              ],
+              type: 'role'
+            }))
+        ];
+
         const channel = await interaction.guild.channels.create({
           name: `ticket-${interaction.user.id}`,
           type: ChannelType.GuildText,
-          permissionOverwrites: [
-            {
-              id: interaction.guild.id,
-              deny: [PermissionsBitField.Flags.ViewChannel],
-              type: 'role'
-            },
-            {
-              id: interaction.user.id,
-              allow: [
-                PermissionsBitField.Flags.ViewChannel,
-                PermissionsBitField.Flags.SendMessages,
-                PermissionsBitField.Flags.ReadMessageHistory
-              ],
-              type: 'member'
-            },
-            {
-              id: ticketConfig.supportRole,
-              allow: [
-                PermissionsBitField.Flags.ViewChannel,
-                PermissionsBitField.Flags.SendMessages,
-                PermissionsBitField.Flags.ReadMessageHistory
-              ],
-              type: 'role'
-            },
-            // Allow all admins
-            ...interaction.guild.roles.cache
-              .filter(role => role.permissions.has(PermissionsBitField.Flags.Administrator))
-              .map(role => ({
-                id: role.id,
-                allow: [
-                  PermissionsBitField.Flags.ViewChannel,
-                  PermissionsBitField.Flags.SendMessages,
-                  PermissionsBitField.Flags.ReadMessageHistory
-                ],
-                type: 'role'
-              }))
-          ]
+          permissionOverwrites
         });
 
         // Send greeting and delete button
