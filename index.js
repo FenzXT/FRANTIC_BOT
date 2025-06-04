@@ -675,7 +675,7 @@ client.on('interactionCreate', async interaction => {
       type: ChannelType.GuildText,
       permissionOverwrites: [
         {
-          id: interaction.guild.roles.everyone,
+          id: interaction.guild.id, // <-- FIXED: Use guild ID for @everyone
           deny: [PermissionsBitField.Flags.ViewChannel]
         },
         {
