@@ -16,7 +16,7 @@ A Simple Discord Bot Built With Node.js - JavaScript
 
 - Create Customizable Welcome Message By Your Own
 
-- Open Private Ticket Channel
+- Creates Ticket Channel
 
 ---
 
