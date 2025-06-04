@@ -662,11 +662,11 @@ client.on('interactionCreate', async interaction => {
       c.name === `ticket-${interaction.user.id}`
     );
     if (existing) {
-      return interaction.reply({ content: 'You already have an open ticket!', ephemeral: true });
+      return interaction.reply({ content: 'you already have an open ticket!', ephemeral: true });
     }
 
     if (!ticketConfig.supportRole) {
-      return interaction.reply({ content: 'Support role is not set. Please ask an admin to set it with `!setticketrole @role`.', ephemeral: true });
+      return interaction.reply({ content: 'support role is not set, please ask an admin to set it with `!setticketrole @role`.', ephemeral: true });
     }
 
     // Create the ticket channel
@@ -725,11 +725,11 @@ client.on('interactionCreate', async interaction => {
     const deleteRow = new ActionRowBuilder().addComponents(deleteButton);
 
     await channel.send({
-      content: 'Click the button below to delete this ticket when your issue is resolved.',
+      content: 'CLICK THE BUTTON BELOW TO DELETE THIS TICKET CHANNEL WHEN YOUR ISSUE HAS BEEN RESOLVED.',
       components: [deleteRow]
     });
 
-    await interaction.reply({ content: `Your ticket has been created: ${channel}`, ephemeral: true });
+    await interaction.reply({ content: `your ticket has been created: ${channel}`, ephemeral: true });
     return;
   }
 
@@ -741,10 +741,10 @@ client.on('interactionCreate', async interaction => {
     const isCreator = interaction.channel.name === `ticket-${interaction.user.id}`;
 
     if (!(isAdmin || isSupport || isCreator)) {
-      return interaction.reply({ content: 'You do not have permission to delete this ticket.', ephemeral: true });
+      return interaction.reply({ content: 'you do not have permission to delete this ticket.', ephemeral: true });
     }
 
-    await interaction.reply({ content: 'Deleting this ticket...', ephemeral: true });
+    await interaction.reply({ content: 'deleting the ticket...', ephemeral: true });
     setTimeout(() => {
       interaction.channel.delete('Ticket closed');
     }, 1500);
@@ -777,7 +777,7 @@ client.on('guildMemberAdd', async member => {
   try {
     await channel.send({ embeds: [embed] });
   } catch (err) {
-    console.error('Failed to send welcome message:', err);
+    console.error('failed to send welcome message:', err);
   }
 });
 
