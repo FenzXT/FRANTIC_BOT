@@ -725,7 +725,7 @@ client.on('interactionCreate', async interaction => {
     const deleteRow = new ActionRowBuilder().addComponents(deleteButton);
 
     await channel.send({
-      content: '',
+      content: '\u200B',
       components: [deleteRow]
     });
 
