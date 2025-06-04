@@ -34,8 +34,10 @@ try {
 let ticketConfig;
 try {
   ticketConfig = require('./ticketConfig.json');
+  // Ensure backward compatibility
+  if (!('category' in ticketConfig)) ticketConfig.category = "";
 } catch (err) {
-  ticketConfig = { supportRole: "" };
+  ticketConfig = { supportRole: "", category: "" };
   fs.writeFileSync('./ticketConfig.json', JSON.stringify(ticketConfig, null, 2));
 }
 
@@ -75,8 +77,34 @@ client.on('messageCreate', async (message) => {
     return message.reply(`Support role set to ${role}`);
   }
 
+  // Set the ticket category (admin only)
+  if (message.content.startsWith('!setticketcategory') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    const args = message.content.split(' ');
+    const categoryId = args[1];
+    if (
+      !categoryId ||
+      !message.guild.channels.cache.has(categoryId) ||
+      message.guild.channels.cache.get(categoryId).type !== ChannelType.GuildCategory
+    ) {
+      return message.reply(
+        'Usage: `!setticketcategory [category-id]`\n' +
+        'You must provide a valid category ID (right-click category > Copy ID with Developer Mode enabled).'
+      );
+    }
+    ticketConfig.category = categoryId;
+    fs.writeFileSync('./ticketConfig.json', JSON.stringify(ticketConfig, null, 2));
+    return message.reply(`Ticket category set to <#${categoryId}>`);
+  }
+
   // Admin creates a ticket panel with button
   if (message.content.startsWith('!createticket') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    // Check for setup
+    if (!ticketConfig.supportRole) {
+      return message.reply('You must set a support role first using `!setticketrole @role`.');
+    }
+    if (!ticketConfig.category) {
+      return message.reply('You must set a ticket category first using `!setticketcategory [category-id]`.');
+    }
     const regex = /!createticket\s+"([^"]+)"\s+"([^"]+)"\s+"(#[0-9A-Fa-f]{6})"/;
     const match = message.content.match(regex);
     if (!match) {
@@ -171,7 +199,10 @@ client.on('messageCreate', async (message) => {
           value: 'Creates a ticket panel with a button (requires Administrator permission)' },
         { 
           name: '!setticketrole @role',
-          value: 'Sets the support role for inside tickets ping.' },
+          value: 'Sets the ticket role for inside tickets ping.' },
+        { 
+          name: '!setticketcategory [category-id]',
+          value: 'Sets the category for ticket channels to be created.' },
       )
       .setFooter({ text: 'FRANTIC BOT !HELP' });
 
@@ -685,7 +716,16 @@ client.on('interactionCreate', async interaction => {
       // Check if support role is set
       if (!ticketConfig.supportRole) {
         await interaction.reply({ 
-          content: 'Support role is not set, please ask an admin to set it with `!setticketrole @role`.', 
+          content: 'ticket role is not set, please set it with `!setticketrole @role`.', 
+          flags: MessageFlags.Ephemeral 
+        });
+        return;
+      }
+
+      // Check if ticket category is set
+      if (!ticketConfig.category) {
+        await interaction.reply({ 
+          content: 'ticket category is not set, please set it with `!setticketcategory [id]`.', 
           flags: MessageFlags.Ephemeral 
         });
         return;
@@ -737,6 +777,7 @@ client.on('interactionCreate', async interaction => {
         const channel = await interaction.guild.channels.create({
           name: `ticket-${interaction.user.id}`,
           type: ChannelType.GuildText,
+          parent: ticketConfig.category || undefined,
           permissionOverwrites
         });
 
