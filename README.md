@@ -54,6 +54,8 @@ A Simple Discord Bot Built With Node.js - JavaScript
 
 !setticketrole @role
 
+!setticketcategory [id]
+
 Welcome Variables:
 
 <@user>
