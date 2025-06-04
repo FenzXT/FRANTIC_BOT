@@ -10,7 +10,8 @@ const {
   ButtonBuilder,
   ButtonStyle,
   ComponentType,
-  ChannelType
+  ChannelType,
+  MessageFlags
 } = require('discord.js');
 const fs = require('fs');
 
@@ -202,14 +203,24 @@ client.on('messageCreate', async (message) => {
 
     collector.on('collect', async interaction => {
       if (interaction.user.id !== message.author.id) {
-        return interaction.reply({ content: "Only the user who used !help can use these buttons.", ephemeral: true });
+        try {
+          await interaction.reply({ content: "Only the user who used !help can use these buttons.", flags: MessageFlags.Ephemeral });
+        } catch (error) {
+          console.error("Failed to reply to interaction:", error);
+        }
+        return;
       }
-      if (interaction.customId === 'help_page_2') {
-        await interaction.update({ embeds: [helpEmbedPage2], components: [rowPage2] });
-      } else if (interaction.customId === 'help_page_1') {
-        await interaction.update({ embeds: [helpEmbedPage1], components: [rowPage1] });
-      } else if (interaction.customId === 'help_page_3') {
-        await interaction.update({ embeds: [helpEmbedPage3], components: [rowPage3] });
+      
+      try {
+        if (interaction.customId === 'help_page_2') {
+          await interaction.update({ embeds: [helpEmbedPage2], components: [rowPage2] });
+        } else if (interaction.customId === 'help_page_1') {
+          await interaction.update({ embeds: [helpEmbedPage1], components: [rowPage1] });
+        } else if (interaction.customId === 'help_page_3') {
+          await interaction.update({ embeds: [helpEmbedPage3], components: [rowPage3] });
+        }
+      } catch (error) {
+        console.error("Failed to update interaction:", error);
       }
     });
 
@@ -655,104 +666,170 @@ client.on('messageCreate', async (message) => {
 
 // --- TICKET SYSTEM INTERACTION HANDLER ---
 client.on('interactionCreate', async interaction => {
-  // --- Create Ticket Button ---
-  if (interaction.isButton() && interaction.customId === 'create_ticket') {
-    // Only one open ticket per user
-    const existing = interaction.guild.channels.cache.find(c =>
-      c.name === `ticket-${interaction.user.id}`
-    );
-    if (existing) {
-      return interaction.reply({ content: 'you already have an open ticket!', ephemeral: true });
+  try {
+    // --- Create Ticket Button ---
+    if (interaction.isButton() && interaction.customId === 'create_ticket') {
+      // Only one open ticket per user
+      const existing = interaction.guild.channels.cache.find(c =>
+        c.name === `ticket-${interaction.user.id}`
+      );
+      
+      if (existing) {
+        await interaction.reply({ 
+          content: 'You already have an open ticket!', 
+          flags: MessageFlags.Ephemeral 
+        });
+        return;
+      }
+
+      // Check if support role is set
+      if (!ticketConfig.supportRole) {
+        await interaction.reply({ 
+          content: 'Support role is not set, please ask an admin to set it with `!setticketrole @role`.', 
+          flags: MessageFlags.Ephemeral 
+        });
+        return;
+      }
+
+      // Defer the reply to give us more time to create the channel
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+      try {
+        // Create the ticket channel
+        const channel = await interaction.guild.channels.create({
+          name: `ticket-${interaction.user.id}`,
+          type: ChannelType.GuildText,
+          permissionOverwrites: [
+            {
+              id: interaction.guild.id,
+              deny: [PermissionsBitField.Flags.ViewChannel],
+              type: 'role'
+            },
+            {
+              id: interaction.user.id,
+              allow: [
+                PermissionsBitField.Flags.ViewChannel,
+                PermissionsBitField.Flags.SendMessages,
+                PermissionsBitField.Flags.ReadMessageHistory
+              ],
+              type: 'member'
+            },
+            {
+              id: ticketConfig.supportRole,
+              allow: [
+                PermissionsBitField.Flags.ViewChannel,
+                PermissionsBitField.Flags.SendMessages,
+                PermissionsBitField.Flags.ReadMessageHistory
+              ],
+              type: 'role'
+            },
+            // Allow all admins
+            ...interaction.guild.roles.cache
+              .filter(role => role.permissions.has(PermissionsBitField.Flags.Administrator))
+              .map(role => ({
+                id: role.id,
+                allow: [
+                  PermissionsBitField.Flags.ViewChannel,
+                  PermissionsBitField.Flags.SendMessages,
+                  PermissionsBitField.Flags.ReadMessageHistory
+                ],
+                type: 'role'
+              }))
+          ]
+        });
+
+        // Send greeting and delete button
+        await channel.send({
+          content: `<@&${ticketConfig.supportRole}> PINGED BY <@${interaction.user.id}>`,
+          allowedMentions: { roles: [ticketConfig.supportRole] }
+        });
+
+        await channel.send('`CLICK THE BUTTON BELOW TO DELETE THIS TICKET CHANNEL WHEN YOUR ISSUE HAS BEEN RESOLVED.`');
+
+        // Delete Ticket button
+        const deleteButton = new ButtonBuilder()
+          .setCustomId('delete_ticket')
+          .setLabel('Delete Ticket')
+          .setStyle(ButtonStyle.Danger);
+
+        const deleteRow = new ActionRowBuilder().addComponents(deleteButton);
+
+        await channel.send({
+          content: '\u200B',
+          components: [deleteRow]
+        });
+
+        await interaction.editReply({ 
+          content: `Your ticket has been created: ${channel}`, 
+          flags: MessageFlags.Ephemeral 
+        });
+      } catch (error) {
+        console.error("Error creating ticket channel:", error);
+        await interaction.editReply({ 
+          content: "Failed to create ticket channel. Please try again later.", 
+          flags: MessageFlags.Ephemeral 
+        });
+      }
+      return;
     }
 
-    if (!ticketConfig.supportRole) {
-      return interaction.reply({ content: 'support role is not set, please ask an admin to set it with `!setticketrole @role`.', ephemeral: true });
+    // --- Delete Ticket Button ---
+    if (interaction.isButton() && interaction.customId === 'delete_ticket') {
+      try {
+        const member = await interaction.guild.members.fetch(interaction.user.id);
+        const isAdmin = member.permissions.has(PermissionsBitField.Flags.Administrator);
+        const isSupport = ticketConfig.supportRole && member.roles.cache.has(ticketConfig.supportRole);
+        const isCreator = interaction.channel.name === `ticket-${interaction.user.id}`;
+
+        if (!(isAdmin || isSupport || isCreator)) {
+          await interaction.reply({ 
+            content: 'You do not have permission to delete this ticket.', 
+            flags: MessageFlags.Ephemeral 
+          });
+          return;
+        }
+
+        await interaction.reply({ 
+          content: 'Deleting the ticket...', 
+          flags: MessageFlags.Ephemeral 
+        });
+        
+        setTimeout(() => {
+          interaction.channel.delete('Ticket closed').catch(err => {
+            console.error("Failed to delete ticket channel:", err);
+          });
+        }, 1500);
+      } catch (error) {
+        console.error("Error handling delete ticket button:", error);
+        if (!interaction.replied) {
+          await interaction.reply({ 
+            content: "An error occurred while processing your request.", 
+            flags: MessageFlags.Ephemeral 
+          });
+        }
+      }
+      return;
     }
 
-    // Create the ticket channel
-    const channel = await interaction.guild.channels.create({
-      name: `ticket-${interaction.user.id}`,
-      type: ChannelType.GuildText,
-      permissionOverwrites: [
-        {
-          id: interaction.guild.id,
-          deny: [PermissionsBitField.Flags.ViewChannel],
-          type: 'role'
-        },
-        {
-          id: interaction.user.id,
-          allow: [
-            PermissionsBitField.Flags.ViewChannel,
-            PermissionsBitField.Flags.SendMessages,
-            PermissionsBitField.Flags.ReadMessageHistory
-          ],
-          type: 'member'
-        },
-        {
-          id: ticketConfig.supportRole,
-          allow: [
-            PermissionsBitField.Flags.ViewChannel,
-            PermissionsBitField.Flags.SendMessages,
-            PermissionsBitField.Flags.ReadMessageHistory
-          ],
-          type: 'role'
-        },
-        // Allow all admins
-        ...interaction.guild.roles.cache
-          .filter(role => role.permissions.has(PermissionsBitField.Flags.Administrator))
-          .map(role => ({
-            id: role.id,
-            allow: [
-              PermissionsBitField.Flags.ViewChannel,
-              PermissionsBitField.Flags.SendMessages,
-              PermissionsBitField.Flags.ReadMessageHistory
-            ],
-            type: 'role'
-          }))
-      ]
-    });
-
-    // Send greeting and delete button
-    await channel.send({
-      content: `<@&${ticketConfig.supportRole}> PINGED BY <@${interaction.user.id}>`,
-      allowedMentions: { roles: [ticketConfig.supportRole] }
-    });
-
-    await channel.send('`CLICK THE BUTTON BELOW TO DELETE THIS TICKET CHANNEL WHEN YOUR ISSUE HAS BEEN RESOLVED.`');
-
-    // Delete Ticket button
-    const deleteButton = new ButtonBuilder()
-      .setCustomId('delete_ticket')
-      .setLabel('Delete Ticket')
-      .setStyle(ButtonStyle.Danger);
-
-    const deleteRow = new ActionRowBuilder().addComponents(deleteButton);
-
-    await channel.send({
-      content: '\u200B',
-      components: [deleteRow]
-    });
-
-    await interaction.reply({ content: `your ticket has been created: ${channel}`, ephemeral: true });
-    return;
-  }
-
-  // --- Delete Ticket Button ---
-  if (interaction.isButton() && interaction.customId === 'delete_ticket') {
-    const member = await interaction.guild.members.fetch(interaction.user.id);
-    const isAdmin = member.permissions.has(PermissionsBitField.Flags.Administrator);
-    const isSupport = ticketConfig.supportRole && member.roles.cache.has(ticketConfig.supportRole);
-    const isCreator = interaction.channel.name === `ticket-${interaction.user.id}`;
-
-    if (!(isAdmin || isSupport || isCreator)) {
-      return interaction.reply({ content: 'you do not have permission to delete this ticket.', ephemeral: true });
+    // --- Help Page Buttons ---
+    if (interaction.isButton() && interaction.customId.startsWith('help_page_')) {
+      // These are handled in the messageCreate event
+      return;
     }
-
-    await interaction.reply({ content: 'deleting the ticket...', ephemeral: true });
-    setTimeout(() => {
-      interaction.channel.delete('Ticket closed');
-    }, 1500);
-    return;
+  } catch (error) {
+    console.error("Error handling interaction:", error);
+    
+    // Try to respond if we haven't already
+    if (!interaction.replied && !interaction.deferred) {
+      try {
+        await interaction.reply({ 
+          content: "An error occurred while processing your request.", 
+          flags: MessageFlags.Ephemeral 
+        });
+      } catch (err) {
+        // Ignore further errors
+      }
+    }
   }
 });
 
@@ -783,6 +860,11 @@ client.on('guildMemberAdd', async member => {
   } catch (err) {
     console.error('failed to send welcome message:', err);
   }
+});
+
+// Global error handler to prevent crashes
+process.on('unhandledRejection', (error) => {
+  console.error('Unhandled promise rejection:', error);
 });
 
 client.login(process.env.DISCORD_TOKEN);
