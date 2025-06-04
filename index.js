@@ -675,8 +675,9 @@ client.on('interactionCreate', async interaction => {
       type: ChannelType.GuildText,
       permissionOverwrites: [
         {
-          id: interaction.guild.id, // <-- FIXED: Use guild ID for @everyone
-          deny: [PermissionsBitField.Flags.ViewChannel]
+          id: interaction.guild.id,
+          deny: [PermissionsBitField.Flags.ViewChannel],
+          type: 'role'
         },
         {
           id: interaction.user.id,
@@ -684,7 +685,8 @@ client.on('interactionCreate', async interaction => {
             PermissionsBitField.Flags.ViewChannel,
             PermissionsBitField.Flags.SendMessages,
             PermissionsBitField.Flags.ReadMessageHistory
-          ]
+          ],
+          type: 'member'
         },
         {
           id: ticketConfig.supportRole,
@@ -692,7 +694,8 @@ client.on('interactionCreate', async interaction => {
             PermissionsBitField.Flags.ViewChannel,
             PermissionsBitField.Flags.SendMessages,
             PermissionsBitField.Flags.ReadMessageHistory
-          ]
+          ],
+          type: 'role'
         },
         // Allow all admins
         ...interaction.guild.roles.cache
@@ -703,7 +706,8 @@ client.on('interactionCreate', async interaction => {
               PermissionsBitField.Flags.ViewChannel,
               PermissionsBitField.Flags.SendMessages,
               PermissionsBitField.Flags.ReadMessageHistory
-            ]
+            ],
+            type: 'role'
           }))
       ]
     });
