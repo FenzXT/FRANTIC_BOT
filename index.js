@@ -66,8 +66,7 @@ client.on('messageCreate', async (message) => {
     const role = message.mentions.roles.first();
     if (!role) {
       return message.reply(
-        '❌ Usage: `!setticketrole @Support`\n' +
-        'Example: `!setticketrole @Support`'
+        'Usage: `!setticketrole @role`'
       );
     }
     ticketConfig.supportRole = role.id;
@@ -81,8 +80,7 @@ client.on('messageCreate', async (message) => {
     const match = message.content.match(regex);
     if (!match) {
       return message.reply(
-        '❌ Usage: `!createticket "headline" "message" "#colorhex"`\n' +
-        'Example: `!createticket "Need Help?" "Click the button to open a ticket!" "#2ecc71"`'
+        'Usage: `!createticket "headline" "message" "#colorhex"`'
       );
     }
     const headline = match[1];
@@ -160,34 +158,19 @@ client.on('messageCreate', async (message) => {
       .addFields(
         { 
           name: '!copy-server', 
-          value: 'Copies the server structure (roles/channels, including Announcement, Stage, Forums) for admins\n' +
-                 '**Usage:** `!copy-server`\n' +
-                 '**Example:** `!copy-server` - copy roles, categories, and all channel types'
-        },
+          value: 'Copies the server structure - roles/channels, including Announcement, Stage, Forums (requires Administrator permission)' },
         { 
           name: '!paste-server', 
-          value: 'Pastes the server structure with options for admins (supports Announcement, Stage, Forums)\n' +
-                 '**Usage:** `!paste-server`\n' +
-                 '**Example:** `!paste-server` - paste with your need'
-        },
+          value: 'Pastes the server structure - roles/channels, including Announcement, Stage, Forums (requires Administrator permission)' },
         { 
           name: '!afk [reason]', 
-          value: 'Sets your AFK status with an optional reason. Others will see it when they mention you.\n' +
-                 '**Usage:** `!afk [reason]`\n' +
-                 '**Example:** `!afk out of home`'
-        },
-        { 
-          name: '!setticketrole @role',
-          value: 'Sets the support role for tickets (admin only)\n' +
-                 '**Usage:** `!setticketrole @Support`\n' +
-                 '**Example:** `!setticketrole @Support`'
-        },
+          value: 'Also sets your AFK status with an optional reason. Others will see it when they mention you.' },
         { 
           name: '!createticket "headline" "message" "#colorhex"',
-          value: 'Creates a ticket panel with a button (admin only)\n' +
-                 '**Usage:** `!createticket "headline" "message" "#colorhex"`\n' +
-                 '**Example:** `!createticket "Need Help?" "Click the button to open a ticket!" "#2ecc71"`'
-        }
+          value: 'Creates a ticket panel with a button (requires Administrator permission)' },
+        { 
+          name: '!setticketrole @role',
+          value: 'Sets the support role for inside tickets ping.' },
       )
       .setFooter({ text: 'FRANTIC BOT !HELP' });
 
