@@ -88,7 +88,7 @@ client.on('messageCreate', async (message) => {
     ) {
       return message.reply(
         'Usage: `!setticketcategory [category-id]`\n' +
-        'You must provide a valid category ID (right-click category > Copy ID with Developer Mode enabled).'
+        'must provide a valid category ID (category > settings > copy id) Developer mode enabled.'
       );
     }
     ticketConfig.category = categoryId;
@@ -100,10 +100,10 @@ client.on('messageCreate', async (message) => {
   if (message.content.startsWith('!createticket') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     // Check for setup
     if (!ticketConfig.supportRole) {
-      return message.reply('You must set a support role first using `!setticketrole @role`.');
+      return message.reply('must set a ticket role first using `!setticketrole @role`.');
     }
     if (!ticketConfig.category) {
-      return message.reply('You must set a ticket category first using `!setticketcategory [category-id]`.');
+      return message.reply('must set a ticket category first using `!setticketcategory [id]`.');
     }
     const regex = /!createticket\s+"([^"]+)"\s+"([^"]+)"\s+"(#[0-9A-Fa-f]{6})"/;
     const match = message.content.match(regex);
@@ -201,8 +201,8 @@ client.on('messageCreate', async (message) => {
           name: '!setticketrole @role',
           value: 'Sets the ticket role for inside tickets ping.' },
         { 
-          name: '!setticketcategory [category-id]',
-          value: 'Sets the category for ticket channels to be created.' },
+          name: '!setticketcategory [id]',
+          value: 'Sets the category for ticket channels to be created, category > settings > copy id.' },
       )
       .setFooter({ text: 'FRANTIC BOT !HELP' });
 
@@ -235,7 +235,7 @@ client.on('messageCreate', async (message) => {
     collector.on('collect', async interaction => {
       if (interaction.user.id !== message.author.id) {
         try {
-          await interaction.reply({ content: "Only the user who used !help can use these buttons.", flags: MessageFlags.Ephemeral });
+          await interaction.reply({ content: "only the user who used !help can use these buttons.", flags: MessageFlags.Ephemeral });
         } catch (error) {
           console.error("Failed to reply to interaction:", error);
         }
