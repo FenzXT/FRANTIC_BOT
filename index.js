@@ -42,7 +42,7 @@ try {
 }
 
 let afkMap = {};
-let serverTemplate = null;
+let userTemplates = {}; // Per-user server templates
 let pendingPaste = {};
 
 const client = new Client({
@@ -64,7 +64,6 @@ client.on('messageCreate', async (message) => {
   if (message.author.bot || !message.guild) return;
 
   // --- TICKET SYSTEM COMMANDS ---
-  // Set the ticket support role (admin only)
   if (message.content.startsWith('!setticketrole') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     const role = message.mentions.roles.first();
     if (!role) {
@@ -77,7 +76,6 @@ client.on('messageCreate', async (message) => {
     return message.reply(`Support role set to ${role}`);
   }
 
-  // Set the ticket category (admin only)
   if (message.content.startsWith('!setticketcategory') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     const args = message.content.split(' ');
     const categoryId = args[1];
@@ -96,9 +94,7 @@ client.on('messageCreate', async (message) => {
     return message.reply(`Ticket category set to <#${categoryId}>`);
   }
 
-  // Admin creates a ticket panel with button
   if (message.content.startsWith('!createticket') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    // Check for setup
     if (!ticketConfig.supportRole) {
       return message.reply('must set a ticket role first using `!setticketrole @role`.');
     }
@@ -264,7 +260,7 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  // --- COPY SERVER ---
+  // --- COPY SERVER (PER-USER) ---
   if (message.content === '!copy-server') {
     if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
       return message.reply('❌ Only admins can use this command.');
@@ -312,25 +308,30 @@ client.on('messageCreate', async (message) => {
             })),
         }));
 
-      serverTemplate = { roles, categories };
-      fs.writeFileSync('serverTemplate.json', JSON.stringify(serverTemplate, null, 2));
+      const template = { roles, categories };
+      userTemplates[message.author.id] = template;
+      fs.writeFileSync(`serverTemplate-${message.author.id}.json`, JSON.stringify(template, null, 2));
       message.reply('✅ Server structure copied! Use `!paste-server` in another server to paste.');
     } catch (err) {
       console.error(err);
       message.reply('❌ Failed to copy server structure.');
     }
+    return;
   }
 
-  // --- INTERACTIVE PASTE SERVER ---
+  // --- INTERACTIVE PASTE SERVER (PER-USER) ---
   if (message.content === '!paste-server') {
     if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
       return message.reply('❌ Only admins can use this command.');
     }
-    if (!serverTemplate && fs.existsSync('serverTemplate.json')) {
-      serverTemplate = JSON.parse(fs.readFileSync('serverTemplate.json'));
+    // Try to load template from memory or file
+    let template = userTemplates[message.author.id];
+    if (!template && fs.existsSync(`serverTemplate-${message.author.id}.json`)) {
+      template = JSON.parse(fs.readFileSync(`serverTemplate-${message.author.id}.json`));
+      userTemplates[message.author.id] = template;
     }
-    if (!serverTemplate) {
-      return message.reply('❌ No server template found. Use `!copy-server` first.');
+    if (!template) {
+      return message.reply('❌ No server template found for you. Use `!copy-server` first.');
     }
     pendingPaste[message.author.id] = { step: 'roles', deleteRoles: null, deleteChannels: null };
     return message.reply(
@@ -341,7 +342,7 @@ client.on('messageCreate', async (message) => {
     );
   }
 
-  // --- INTERACTIVE PASTE STEPS ---
+  // --- INTERACTIVE PASTE STEPS (PER-USER) ---
   if (pendingPaste[message.author.id]) {
     const state = pendingPaste[message.author.id];
     const content = message.content.trim();
@@ -369,6 +370,17 @@ client.on('messageCreate', async (message) => {
     if (state.step === 'confirm' && content.toLowerCase() === 'run') {
       (async () => {
         try {
+          // Load template for this user
+          let template = userTemplates[message.author.id];
+          if (!template && fs.existsSync(`serverTemplate-${message.author.id}.json`)) {
+            template = JSON.parse(fs.readFileSync(`serverTemplate-${message.author.id}.json`));
+            userTemplates[message.author.id] = template;
+          }
+          if (!template) {
+            delete pendingPaste[message.author.id];
+            return message.reply('❌ No server template found for you. Use `!copy-server` first.');
+          }
+
           // 1. Delete roles if requested
           if (state.deleteRoles) {
             const rolesToDelete = message.guild.roles.cache
@@ -380,7 +392,7 @@ client.on('messageCreate', async (message) => {
           }
 
           // 2. Recreate roles
-          const sortedRoles = serverTemplate.roles.sort((a, b) => b.position - a.position);
+          const sortedRoles = template.roles.sort((a, b) => b.position - a.position);
           const newRoles = {};
           for (const roleData of sortedRoles) {
             const newRole = await message.guild.roles.create({
@@ -403,7 +415,7 @@ client.on('messageCreate', async (message) => {
 
           // 4. Recreate categories
           const categoryMap = new Map();
-          const sortedCategories = serverTemplate.categories.sort((a, b) => a.position - b.position);
+          const sortedCategories = template.categories.sort((a, b) => a.position - b.position);
           for (const cat of sortedCategories) {
             try {
               const newCategory = await message.guild.channels.create({
@@ -419,7 +431,7 @@ client.on('messageCreate', async (message) => {
 
           // 5. Recreate all channel types in categories
           const channelMap = new Map();
-          for (const cat of serverTemplate.categories) {
+          for (const cat of template.categories) {
             const newCategory = categoryMap.get(cat.id);
             const sortedChans = cat.channels.sort((a, b) => a.position - b.position);
             for (const ch of sortedChans) {
@@ -509,6 +521,12 @@ client.on('messageCreate', async (message) => {
           const completedMessage = '✅ **Server structure paste operation completed!**';
           if (message.channel && message.guild.channels.cache.has(message.channel.id)) {
             await message.channel.send(completedMessage);
+          }
+
+          // --- Forget the template for this user only ---
+          delete userTemplates[message.author.id];
+          if (fs.existsSync(`serverTemplate-${message.author.id}.json`)) {
+            fs.unlinkSync(`serverTemplate-${message.author.id}.json`);
           }
 
           delete pendingPaste[message.author.id];
