@@ -85,8 +85,8 @@ client.on('messageCreate', async (message) => {
       message.guild.channels.cache.get(categoryId).type !== ChannelType.GuildCategory
     ) {
       return message.reply(
-        'Usage: `!setticketcategory [category-id]`\n' +
-        'must provide a valid category ID (category > settings > copy id) Developer mode enabled.'
+        'Usage: `!setticketcategory [id]`\n' +
+        'must provide a valid category ID - developer mode enabled.'
       );
     }
     ticketConfig.category = categoryId;
