@@ -95,12 +95,13 @@ client.on('messageCreate', async (message) => {
   }
 
   if (message.content.startsWith('!createticket') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    // Step-by-step guidance for setting up ticket system
     if (!ticketConfig.supportRole) {
-      return message.reply('must set a ticket role first using `!setticketrole @role`.');
+      return message.reply('Please set your ticket role using `!setticketrole @role`.');
+    } else if (!ticketConfig.category) {
+      return message.reply('Please set your ticket category using `!setticketcategory [id]`.');
     }
-    if (!ticketConfig.category) {
-      return message.reply('must set a ticket category first using `!setticketcategory [id]`.');
-    }
+
     const regex = /!createticket\s+"([^"]+)"\s+"([^"]+)"\s+"(#[0-9A-Fa-f]{6})"/;
     const match = message.content.match(regex);
     if (!match) {
@@ -718,6 +719,22 @@ client.on('interactionCreate', async interaction => {
   try {
     // --- Create Ticket Button ---
     if (interaction.isButton() && interaction.customId === 'create_ticket') {
+      // Step-by-step ticket role/category check
+      if (!ticketConfig.supportRole) {
+        await interaction.reply({ 
+          content: 'Please set your ticket role using `!setticketrole @role`.', 
+          flags: MessageFlags.Ephemeral 
+        });
+        return;
+      }
+      if (!ticketConfig.category) {
+        await interaction.reply({ 
+          content: 'Please set your ticket category using `!setticketcategory [id]`.', 
+          flags: MessageFlags.Ephemeral 
+        });
+        return;
+      }
+
       // Only one open ticket per user
       const existing = interaction.guild.channels.cache.find(c =>
         c.name === `ticket-${interaction.user.id}`
@@ -726,24 +743,6 @@ client.on('interactionCreate', async interaction => {
       if (existing) {
         await interaction.reply({ 
           content: 'You already have an open ticket!', 
-          flags: MessageFlags.Ephemeral 
-        });
-        return;
-      }
-
-      // Check if support role is set
-      if (!ticketConfig.supportRole) {
-        await interaction.reply({ 
-          content: 'ticket role is not set, please set it with `!setticketrole @role`.', 
-          flags: MessageFlags.Ephemeral 
-        });
-        return;
-      }
-
-      // Check if ticket category is set
-      if (!ticketConfig.category) {
-        await interaction.reply({ 
-          content: 'ticket category is not set, please set it with `!setticketcategory [id]`.', 
           flags: MessageFlags.Ephemeral 
         });
         return;
