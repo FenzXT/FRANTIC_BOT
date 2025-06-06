@@ -1,4 +1,4 @@
-▪︎ Discord Moderation - Welcome - Ticket - Webhook Bot!
+▪︎ Discord Moderation - Welcome - Copy/Paste Server - Ticket - Webhook Bot!
 
 A Simple Discord Bot Built With Node.js - JavaScript
 
