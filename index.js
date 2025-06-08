@@ -408,8 +408,9 @@ client.on('messageCreate', async (message) => {
     return message.reply(
       "**Paste Options:**\n" +
       "1️⃣ Delete existing roles before pasting new ones\n" +
-      "2️⃣ Keep existing roles\n" +
-      "Reply with `1` or `2`."
+      "2️⃣ Keep existing roles and add from template\n" +
+      "3️⃣ Keep existing roles and do NOT add roles from template\n" +
+      "Reply with `1`, `2` or `3`."
     );
   }
 
@@ -418,26 +419,34 @@ client.on('messageCreate', async (message) => {
     const state = pendingPaste[message.author.id];
     const content = message.content.trim();
 
-    if (state.step === 'roles' && (content === '1' || content === '2')) {
+    // ROLES SELECTION
+    if (state.step === 'roles' && ['1', '2', '3'].includes(content)) {
+      // 1: delete & add, 2: keep & add, 3: keep & don't add
       state.deleteRoles = content === '1';
+      state.skipRoleAdd = content === '3';
       state.step = 'channels';
       return message.reply(
         "**Next:**\n" +
         "1️⃣ Delete existing channels before pasting new ones\n" +
-        "2️⃣ Keep existing channels\n" +
-        "Reply with `1` or `2`."
+        "2️⃣ Keep existing channels and add from template\n" +
+        "3️⃣ Keep existing channels and do NOT add channels from template\n" +
+        "Reply with `1`, `2` or `3`."
       );
     }
 
-    if (state.step === 'channels' && (content === '1' || content === '2')) {
+    // CHANNELS SELECTION
+    if (state.step === 'channels' && ['1', '2', '3'].includes(content)) {
+      // 1: delete & add, 2: keep & add, 3: keep & don't add
       state.deleteChannels = content === '1';
+      state.skipChannelAdd = content === '3';
       state.step = 'confirm';
       return message.reply(
-        `**Ready to run!**\nDelete Roles: ${state.deleteRoles ? 'Yes' : 'No'}\nDelete Channels: ${state.deleteChannels ? 'Yes' : 'No'}\n` +
+        `**Ready to run!**\nDelete Roles: ${state.deleteRoles ? 'Yes' : 'No'}\nAdd Roles: ${state.skipRoleAdd ? 'No' : 'Yes'}\nDelete Channels: ${state.deleteChannels ? 'Yes' : 'No'}\nAdd Channels: ${state.skipChannelAdd ? 'No' : 'Yes'}\n` +
         "Type `run` to start the process."
       );
     }
 
+    // CONFIRMATION & EXECUTION
     if (state.step === 'confirm' && content.toLowerCase() === 'run') {
       (async () => {
         try {
@@ -462,19 +471,21 @@ client.on('messageCreate', async (message) => {
             }
           }
 
-          // 2. Recreate roles
-          const sortedRoles = template.roles.sort((a, b) => b.position - a.position);
+          // 2. Recreate roles if not skipped
           const newRoles = {};
-          for (const roleData of sortedRoles) {
-            const newRole = await message.guild.roles.create({
-              name: roleData.name,
-              color: roleData.color,
-              hoist: roleData.hoist,
-              permissions: BigInt(roleData.permissions),
-              mentionable: roleData.mentionable,
-              reason: "Recreating server structure"
-            });
-            newRoles[roleData.name] = newRole;
+          if (!state.skipRoleAdd) {
+            const sortedRoles = template.roles.sort((a, b) => b.position - a.position);
+            for (const roleData of sortedRoles) {
+              const newRole = await message.guild.roles.create({
+                name: roleData.name,
+                color: roleData.color,
+                hoist: roleData.hoist,
+                permissions: BigInt(roleData.permissions),
+                mentionable: roleData.mentionable,
+                reason: "Recreating server structure"
+              });
+              newRoles[roleData.name] = newRole;
+            }
           }
 
           // 3. Delete channels if requested
@@ -484,40 +495,89 @@ client.on('messageCreate', async (message) => {
             }
           }
 
-          // --- 4. Recreate categories with permission overwrites ---
+          // 4. Recreate categories with permission overwrites if not skipping channels
           const categoryMap = new Map();
-          const sortedCategories = template.categories.sort((a, b) => a.position - b.position);
-          for (const cat of sortedCategories) {
-            try {
-              const newCategory = await message.guild.channels.create({
-                name: cat.name,
-                type: ChannelType.GuildCategory,
-                position: cat.position,
-                permissionOverwrites: cat.permissionOverwrites.map(po => ({
-                  id: po.id,
-                  allow: BigInt(po.allow),
-                  deny: BigInt(po.deny),
-                  type: po.type,
-                })),
-              });
-              categoryMap.set(cat.id, newCategory);
-            } catch (err) {
-              console.error(`Failed to create category "${cat.name}":`, err);
+          if (!state.skipChannelAdd) {
+            const sortedCategories = template.categories.sort((a, b) => a.position - b.position);
+            for (const cat of sortedCategories) {
+              try {
+                const newCategory = await message.guild.channels.create({
+                  name: cat.name,
+                  type: ChannelType.GuildCategory,
+                  position: cat.position,
+                  permissionOverwrites: cat.permissionOverwrites.map(po => ({
+                    id: po.id,
+                    allow: BigInt(po.allow),
+                    deny: BigInt(po.deny),
+                    type: po.type,
+                  })),
+                });
+                categoryMap.set(cat.id, newCategory);
+              } catch (err) {
+                console.error(`Failed to create category "${cat.name}":`, err);
+              }
             }
-          }
 
-          // --- 5. Recreate all channel types in categories, with permissions ---
-          const channelMap = new Map();
-          for (const cat of template.categories) {
-            const newCategory = categoryMap.get(cat.id);
-            const sortedChans = cat.channels.sort((a, b) => a.position - b.position);
-            for (const ch of sortedChans) {
+            // 5. Recreate all channel types in categories, with permissions
+            const channelMap = new Map();
+            for (const cat of template.categories) {
+              const newCategory = categoryMap.get(cat.id);
+              const sortedChans = cat.channels.sort((a, b) => a.position - b.position);
+              for (const ch of sortedChans) {
+                try {
+                  let newChannel;
+                  const baseProps = {
+                    name: ch.name,
+                    type: ch.type,
+                    parent: newCategory.id,
+                    position: ch.position,
+                    permissionOverwrites: ch.permissionOverwrites.map(po => ({
+                      id: po.id,
+                      allow: BigInt(po.allow),
+                      deny: BigInt(po.deny),
+                      type: po.type,
+                    })),
+                  };
+                  if (ch.type === ChannelType.GuildText) {
+                    newChannel = await message.guild.channels.create({
+                      ...baseProps,
+                      topic: ch.topic,
+                      nsfw: ch.nsfw,
+                      rateLimitPerUser: ch.rateLimitPerUser,
+                    });
+                  } else if (ch.type === ChannelType.GuildVoice) {
+                    newChannel = await message.guild.channels.create({
+                      ...baseProps,
+                      bitrate: ch.bitrate,
+                      userLimit: ch.userLimit,
+                      rtcRegion: ch.rtcRegion,
+                      videoQualityMode: ch.videoQualityMode,
+                    });
+                  } else if (ch.type === ChannelType.GuildAnnouncement) {
+                    newChannel = await message.guild.channels.create({
+                      ...baseProps,
+                      topic: ch.topic,
+                      nsfw: ch.nsfw,
+                    });
+                  } else if (ch.type === ChannelType.GuildStageVoice) {
+                    newChannel = await message.guild.channels.create(baseProps);
+                  } else if (ch.type === ChannelType.GuildForum) {
+                    newChannel = await message.guild.channels.create(baseProps);
+                  }
+                  if (newChannel) channelMap.set(ch.id, newChannel);
+                } catch (err) {
+                  console.error(`Failed to create channel "${ch.name}":`, err);
+                }
+              }
+            }
+
+            // 6. Create uncategorized channels (parentId=null)
+            for (const ch of (template.uncategorizedChannels || [])) {
               try {
                 let newChannel;
                 const baseProps = {
                   name: ch.name,
                   type: ch.type,
-                  parent: newCategory.id,
                   position: ch.position,
                   permissionOverwrites: ch.permissionOverwrites.map(po => ({
                     id: po.id,
@@ -554,55 +614,8 @@ client.on('messageCreate', async (message) => {
                 }
                 if (newChannel) channelMap.set(ch.id, newChannel);
               } catch (err) {
-                console.error(`Failed to create channel "${ch.name}":`, err);
+                console.error(`Failed to create uncategorized channel "${ch.name}":`, err);
               }
-            }
-          }
-
-          // --- 6. Create uncategorized channels (parentId=null) ---
-          for (const ch of (template.uncategorizedChannels || [])) {
-            try {
-              let newChannel;
-              const baseProps = {
-                name: ch.name,
-                type: ch.type,
-                position: ch.position,
-                permissionOverwrites: ch.permissionOverwrites.map(po => ({
-                  id: po.id,
-                  allow: BigInt(po.allow),
-                  deny: BigInt(po.deny),
-                  type: po.type,
-                })),
-              };
-              if (ch.type === ChannelType.GuildText) {
-                newChannel = await message.guild.channels.create({
-                  ...baseProps,
-                  topic: ch.topic,
-                  nsfw: ch.nsfw,
-                  rateLimitPerUser: ch.rateLimitPerUser,
-                });
-              } else if (ch.type === ChannelType.GuildVoice) {
-                newChannel = await message.guild.channels.create({
-                  ...baseProps,
-                  bitrate: ch.bitrate,
-                  userLimit: ch.userLimit,
-                  rtcRegion: ch.rtcRegion,
-                  videoQualityMode: ch.videoQualityMode,
-                });
-              } else if (ch.type === ChannelType.GuildAnnouncement) {
-                newChannel = await message.guild.channels.create({
-                  ...baseProps,
-                  topic: ch.topic,
-                  nsfw: ch.nsfw,
-                });
-              } else if (ch.type === ChannelType.GuildStageVoice) {
-                newChannel = await message.guild.channels.create(baseProps);
-              } else if (ch.type === ChannelType.GuildForum) {
-                newChannel = await message.guild.channels.create(baseProps);
-              }
-              if (newChannel) channelMap.set(ch.id, newChannel);
-            } catch (err) {
-              console.error(`Failed to create uncategorized channel "${ch.name}":`, err);
             }
           }
 
