@@ -59,6 +59,14 @@ let afkMap = {};
 let userTemplates = {};
 let pendingPaste = {};
 
+// --- ANTISPAM, ANTILINK, ANTIMENTION SETTINGS ---
+let antiSpamEnabled = false;
+let antiLinkEnabled = false;
+let antiMentionUser = null; // ID of user or role to protect from mentions
+let antiMentionEnabled = false;
+// For spam tracking: { guildId: { userId: { lastMsg, count, timeoutEnd } } }
+const spamMap = {};
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -76,6 +84,91 @@ client.once('ready', () => {
 
 client.on('messageCreate', async (message) => {
   if (message.author.bot || !message.guild) return;
+
+  // --- Antilink Toggle ---
+  if (message.content === '!antilink' && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    antiLinkEnabled = !antiLinkEnabled;
+    return message.reply(`Antilink is now **${antiLinkEnabled ? "ENABLED" : "DISABLED"}**.`);
+  }
+
+  // --- Antispam Toggle ---
+  if (message.content === '!antispam' && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    antiSpamEnabled = !antiSpamEnabled;
+    return message.reply(`Antispam is now **${antiSpamEnabled ? "ENABLED" : "DISABLED"}**.`);
+  }
+
+  // --- Antimention Set/Unset ---
+  if (message.content.startsWith('!antimention')) {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return;
+    const mention = message.mentions.users.first() || message.mentions.roles.first();
+    if (!mention) {
+      antiMentionUser = null;
+      antiMentionEnabled = false;
+      return message.reply('Antimention protection cleared.');
+    }
+    antiMentionUser = mention.id;
+    antiMentionEnabled = true;
+    return message.reply(`Antimention protection enabled for ${mention}.`);
+  }
+
+  // --- Antilink: Delete messages containing links ---
+  if (antiLinkEnabled) {
+    const linkRegex = /(https?:\/\/[^\s]+)/gi;
+    if (linkRegex.test(message.content)) {
+      try {
+        await message.delete();
+        await message.author.send("Your message was deleted because links are not allowed.");
+      } catch {}
+      return;
+    }
+  }
+
+  // --- Antispam: Timeout users who repeat the same message 3 times ---
+  if (antiSpamEnabled) {
+    const guildId = message.guild.id;
+    const userId = message.author.id;
+    const cleanMsg = message.content.trim().toLowerCase();
+    if (!spamMap[guildId]) spamMap[guildId] = {};
+    const userSpam = spamMap[guildId][userId] || { lastMsg: null, count: 0, timeoutEnd: 0 };
+    const now = Date.now();
+
+    // If currently timed out, ignore (or you can block more messages)
+    if (userSpam.timeoutEnd && now < userSpam.timeoutEnd) {
+      try { await message.delete(); } catch {}
+      return;
+    }
+
+    if (userSpam.lastMsg === cleanMsg) {
+      userSpam.count += 1;
+      if (userSpam.count === 3) {
+        userSpam.timeoutEnd = now + 30 * 1000;
+        userSpam.count = 0;
+        try {
+          await message.member.timeout(30 * 1000, "Spamming same message 3 times");
+          await message.channel.send(`${message.author.tag} was timed out for 30 seconds for spamming.`);
+        } catch {}
+      }
+    } else {
+      userSpam.lastMsg = cleanMsg;
+      userSpam.count = 1;
+    }
+    spamMap[guildId][userId] = userSpam;
+  }
+
+  // --- Antimention: Delete messages mentioning a protected user/role ---
+  if (antiMentionEnabled && antiMentionUser) {
+    let mentioned = false;
+    if (message.mentions.users.has(antiMentionUser) || message.mentions.roles.has(antiMentionUser)) {
+      mentioned = true;
+    }
+    if (mentioned) {
+      try {
+        await message.delete();
+        await message.author.send("Your message was deleted because you mentioned a protected user/role.");
+      } catch {}
+      return;
+    }
+  }
 
   // --- TICKET SYSTEM COMMANDS (PER-GUILD) ---
   if (message.content.startsWith('!setticketrole') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
@@ -107,7 +200,6 @@ client.on('messageCreate', async (message) => {
   }
 
   if (message.content.startsWith('!createticket') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    // Step-by-step guidance for setting up ticket system
     const ticketConfig = getTicketConfig(message.guild.id);
     if (!ticketConfig.supportRole) {
       return message.reply('Please set your ticket role using `!setticketrole @role`.');
@@ -172,9 +264,12 @@ client.on('messageCreate', async (message) => {
         { name: '!kick @user', value: 'Kicks the mentioned user (requires KickMembers permission)' },
         { name: '!ban @user', value: 'Bans the mentioned user (requires BanMembers permission)' },
         { name: '!clear <number>', value: 'Deletes the specified number of messages (1-100, requires ManageMessages permission)' },
-        { name: '!clear all', value: 'Deletes up to 100 messages in this channel (requires ManageMessages permission)' }, // Added this line
+        { name: '!clear all', value: 'Deletes up to 100 messages in this channel (requires ManageMessages permission)' },
         { name: '!timeout @user <seconds>', value: 'Times out the user for the given seconds (requires ModerateMembers permission)' },
-        { name: '!createwebhook <url> <color> <headline> <message>', value: 'Sends a message via webhook (requires ManageWebhooks permission)' }
+        { name: '!createwebhook <url> <color> <headline> <message>', value: 'Sends a message via webhook (requires ManageWebhooks permission)' },
+        { name: '!antispam', value: 'Toggles anti-spam protection (timeouts users for 30s spamming)' },
+        { name: '!antilink', value: 'Toggles anti-link protection (deletes messages with links)' },
+        { name: '!antimention @user/@role', value: 'Protects a user or role from being mentioned (resets using !antimention)' }
       )
       .setFooter({ text: 'FRANTIC BOT !HELP' });
 
@@ -216,7 +311,7 @@ client.on('messageCreate', async (message) => {
           value: 'Sets the ticket role for inside tickets ping.' },
         { 
           name: '!setticketcategory [id]',
-          value: 'Sets the category for ticket channels to be created, category > settings > copy id.' },
+          value: 'Sets the category for ticket channels to be created, category > settings > copy id.' }
       )
       .setFooter({ text: 'FRANTIC BOT !HELP' });
 
@@ -255,7 +350,6 @@ client.on('messageCreate', async (message) => {
         }
         return;
       }
-      
       try {
         if (interaction.customId === 'help_page_2') {
           await interaction.update({ embeds: [helpEmbedPage2], components: [rowPage2] });
@@ -283,8 +377,6 @@ client.on('messageCreate', async (message) => {
     if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
       return message.reply('❌ Only admins can use this command.');
     }
-
-    // --- Check if user already has a template in memory or file ---
     if (
       userTemplates[message.author.id] ||
       fs.existsSync(`serverTemplate-${message.author.id}.json`)
@@ -293,7 +385,6 @@ client.on('messageCreate', async (message) => {
         '❌ You already have a copied server template! Please clear it using `!clear-server-copy` before copying again.'
       );
     }
-
     try {
       const roles = message.guild.roles.cache
         .filter(role => role.name !== '@everyone')
@@ -305,8 +396,6 @@ client.on('messageCreate', async (message) => {
           mentionable: role.mentionable,
           position: role.position,
         }));
-
-      // --- Save categories with their permissions ---
       const categories = message.guild.channels.cache
         .filter(c => c.type === ChannelType.GuildCategory)
         .sort((a, b) => a.rawPosition - b.rawPosition)
@@ -343,8 +432,6 @@ client.on('messageCreate', async (message) => {
               videoQualityMode: ch.videoQualityMode || null,
             })),
         }));
-
-      // --- Save uncategorized channels (parentId === null, not a category) ---
       const uncategorizedChannels = message.guild.channels.cache
         .filter(ch => ch.parentId === null && ch.type !== ChannelType.GuildCategory)
         .sort((a, b) => a.rawPosition - b.rawPosition)
@@ -367,7 +454,6 @@ client.on('messageCreate', async (message) => {
           rtcRegion: ch.rtcRegion || null,
           videoQualityMode: ch.videoQualityMode || null,
         }));
-
       const template = { roles, categories, uncategorizedChannels };
       userTemplates[message.author.id] = template;
       fs.writeFileSync(`serverTemplate-${message.author.id}.json`, JSON.stringify(template, null, 2));
@@ -396,7 +482,6 @@ client.on('messageCreate', async (message) => {
     if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
       return message.reply('❌ Only admins can use this command.');
     }
-    // Try to load template from memory or file
     let template = userTemplates[message.author.id];
     if (!template && fs.existsSync(`serverTemplate-${message.author.id}.json`)) {
       template = JSON.parse(fs.readFileSync(`serverTemplate-${message.author.id}.json`));
@@ -422,7 +507,6 @@ client.on('messageCreate', async (message) => {
 
     // ROLES SELECTION
     if (state.step === 'roles' && ['1', '2', '3'].includes(content)) {
-      // 1: delete & add, 2: keep & add, 3: keep & don't add
       state.deleteRoles = content === '1';
       state.skipRoleAdd = content === '3';
       state.step = 'channels';
@@ -437,12 +521,11 @@ client.on('messageCreate', async (message) => {
 
     // CHANNELS SELECTION
     if (state.step === 'channels' && ['1', '2', '3'].includes(content)) {
-      // 1: delete & add, 2: keep & add, 3: keep & don't add
       state.deleteChannels = content === '1';
       state.skipChannelAdd = content === '3';
       state.step = 'confirm';
       return message.reply(
-        `**Ready to run!**\nDelete Roles: ${state.deleteRoles ? 'Yes' : 'No'}\nAdd Roles: ${state.skipRoleAdd ? 'No' : 'Yes'}\nDelete Channels: ${state.deleteChannels ? 'Yes' : 'No'}\nAdd Channels: ${state.skipChannelAdd ? 'No' : 'Yes'}\nType \`run\` to start.`
+        `**Ready to run!**\nDelete Roles: ${state.deleteRoles ? 'Yes' : 'No'}\nAdd Roles: ${state.skipRoleAdd ? 'No' : 'Yes'}\nDelete Channels: ${state.deleteChannels ? 'Yes' : 'No'}\nAdd Channels: ${state.skipChannelAdd ? 'No' : 'Yes'}\nReply with \`run\` to start.`
       );
     }
 
@@ -450,7 +533,6 @@ client.on('messageCreate', async (message) => {
     if (state.step === 'confirm' && content.toLowerCase() === 'run') {
       (async () => {
         try {
-          // Load template for this user
           let template = userTemplates[message.author.id];
           if (!template && fs.existsSync(`serverTemplate-${message.author.id}.json`)) {
             template = JSON.parse(fs.readFileSync(`serverTemplate-${message.author.id}.json`));
@@ -460,8 +542,6 @@ client.on('messageCreate', async (message) => {
             delete pendingPaste[message.author.id];
             return message.reply('❌ No server template found for you. Use `!copy-server` first.');
           }
-
-          // 1. Delete roles if requested
           if (state.deleteRoles) {
             const rolesToDelete = message.guild.roles.cache
               .filter(role => role.name !== '@everyone' && !role.managed)
@@ -470,8 +550,6 @@ client.on('messageCreate', async (message) => {
               try { await role.delete("Pasting server structure"); } catch (e) {}
             }
           }
-
-          // 2. Recreate roles if not skipped
           const newRoles = {};
           if (!state.skipRoleAdd) {
             const sortedRoles = template.roles.sort((a, b) => b.position - a.position);
@@ -487,15 +565,11 @@ client.on('messageCreate', async (message) => {
               newRoles[roleData.name] = newRole;
             }
           }
-
-          // 3. Delete channels if requested
           if (state.deleteChannels) {
             for (const channel of message.guild.channels.cache.values()) {
               try { await channel.delete("Pasting server structure"); } catch {}
             }
           }
-
-          // 4. Recreate categories with permission overwrites if not skipping channels
           const categoryMap = new Map();
           if (!state.skipChannelAdd) {
             const sortedCategories = template.categories.sort((a, b) => a.position - b.position);
@@ -517,8 +591,6 @@ client.on('messageCreate', async (message) => {
                 console.error(`Failed to create category "${cat.name}":`, err);
               }
             }
-
-            // 5. Recreate all channel types in categories, with permissions
             const channelMap = new Map();
             for (const cat of template.categories) {
               const newCategory = categoryMap.get(cat.id);
@@ -570,8 +642,6 @@ client.on('messageCreate', async (message) => {
                 }
               }
             }
-
-            // 6. Create uncategorized channels (parentId=null)
             for (const ch of (template.uncategorizedChannels || [])) {
               try {
                 let newChannel;
@@ -618,19 +688,14 @@ client.on('messageCreate', async (message) => {
               }
             }
           }
-
-          // 7. Notify only in the command channel
           const completedMessage = '✅ **Server structure paste operation completed!**';
           if (message.channel && message.guild.channels.cache.has(message.channel.id)) {
             await message.channel.send(completedMessage);
           }
-
-          // --- Forget the template for this user only ---
           delete userTemplates[message.author.id];
           if (fs.existsSync(`serverTemplate-${message.author.id}.json`)) {
             fs.unlinkSync(`serverTemplate-${message.author.id}.json`);
           }
-
           delete pendingPaste[message.author.id];
           if (message.channel && message.guild.channels.cache.has(message.channel.id)) {
             return message.reply('✅ Server structure pasted!');
@@ -757,14 +822,12 @@ client.on('messageCreate', async (message) => {
     const color = args[2] || '#7500ff';
     const headline = args[3] || 'Headline';
     const msg = args.slice(4).join(' ') || 'Hello from webhook!';
-
     if (!webhookUrl || !webhookUrl.startsWith('https://discord.com/api/webhooks/')) {
       return message.reply(
         'Please provide a valid Discord webhook URL.\n' +
         '**Example:** `!createwebhook https://discord.com/api/webhooks/... #ff0000 Announcement Hello!`'
       );
     }
-
     try {
       const webhookClient = new WebhookClient({ url: webhookUrl });
       const embed = new EmbedBuilder()
@@ -838,7 +901,6 @@ client.on('messageCreate', async (message) => {
 // --- TICKET SYSTEM INTERACTION HANDLER (PER-GUILD) ---
 client.on('interactionCreate', async interaction => {
   try {
-    // --- Create Ticket Button ---
     if (interaction.isButton() && interaction.customId === 'create_ticket') {
       const ticketConfig = getTicketConfig(interaction.guild.id);
       if (!ticketConfig.supportRole) {
@@ -855,12 +917,9 @@ client.on('interactionCreate', async interaction => {
         });
         return;
       }
-
-      // Only one open ticket per user
       const existing = interaction.guild.channels.cache.find(c =>
         c.name === `ticket-${interaction.user.id}`
       );
-      
       if (existing) {
         await interaction.reply({ 
           content: 'You already have an open ticket!', 
@@ -868,12 +927,8 @@ client.on('interactionCreate', async interaction => {
         });
         return;
       }
-
-      // Defer the reply to give us more time to create the channel
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
       try {
-        // Create the ticket channel with explicit type for each overwrite
         const permissionOverwrites = [
           {
             id: interaction.guild.id,
@@ -898,7 +953,6 @@ client.on('interactionCreate', async interaction => {
             ],
             type: 'role'
           },
-          // Allow all admins
           ...interaction.guild.roles.cache
             .filter(role => role.permissions.has(PermissionsBitField.Flags.Administrator))
             .map(role => ({
@@ -911,35 +965,26 @@ client.on('interactionCreate', async interaction => {
               type: 'role'
             }))
         ];
-
         const channel = await interaction.guild.channels.create({
           name: `ticket-${interaction.user.id}`,
           type: ChannelType.GuildText,
           parent: ticketConfig.category || undefined,
           permissionOverwrites
         });
-
-        // Send greeting and delete button
         await channel.send({
           content: `<@&${ticketConfig.supportRole}> PINGED BY <@${interaction.user.id}>`,
           allowedMentions: { roles: [ticketConfig.supportRole] }
         });
-
         await channel.send('`CLICK THE BUTTON BELOW TO DELETE THIS TICKET CHANNEL WHEN YOUR ISSUE HAS BEEN RESOLVED.`');
-
-        // Delete Ticket button
         const deleteButton = new ButtonBuilder()
           .setCustomId('delete_ticket')
           .setLabel('Delete Ticket')
           .setStyle(ButtonStyle.Danger);
-
         const deleteRow = new ActionRowBuilder().addComponents(deleteButton);
-
         await channel.send({
           content: '\u200B',
           components: [deleteRow]
         });
-
         await interaction.editReply({ 
           content: `Your ticket has been created: ${channel}`, 
           flags: MessageFlags.Ephemeral 
@@ -953,8 +998,6 @@ client.on('interactionCreate', async interaction => {
       }
       return;
     }
-
-    // --- Delete Ticket Button ---
     if (interaction.isButton() && interaction.customId === 'delete_ticket') {
       try {
         const ticketConfig = getTicketConfig(interaction.guild.id);
@@ -962,7 +1005,6 @@ client.on('interactionCreate', async interaction => {
         const isAdmin = member.permissions.has(PermissionsBitField.Flags.Administrator);
         const isSupport = ticketConfig.supportRole && member.roles.cache.has(ticketConfig.supportRole);
         const isCreator = interaction.channel.name === `ticket-${interaction.user.id}`;
-
         if (!(isAdmin || isSupport || isCreator)) {
           await interaction.reply({ 
             content: 'You do not have permission to delete this ticket.', 
@@ -970,12 +1012,10 @@ client.on('interactionCreate', async interaction => {
           });
           return;
         }
-
         await interaction.reply({ 
           content: 'Deleting the ticket...', 
           flags: MessageFlags.Ephemeral 
         });
-        
         setTimeout(() => {
           interaction.channel.delete('Ticket closed').catch(err => {
             console.error("Failed to delete ticket channel:", err);
@@ -992,54 +1032,40 @@ client.on('interactionCreate', async interaction => {
       }
       return;
     }
-
-    // --- Help Page Buttons ---
     if (interaction.isButton() && interaction.customId.startsWith('help_page_')) {
-      // These are handled in the messageCreate event
       return;
     }
   } catch (error) {
     console.error("Error handling interaction:", error);
-    
-    // Try to respond if we haven't already
     if (!interaction.replied && !interaction.deferred) {
       try {
         await interaction.reply({ 
           content: "An error occurred while processing your request.", 
           flags: MessageFlags.Ephemeral 
         });
-      } catch (err) {
-        // Ignore further errors
-      }
+      } catch (err) {}
     }
   }
 });
 
-// --- TICKET SYSTEM CATEGORY DELETE WATCHER (PER-GUILD) ---
 client.on('channelDelete', async (channel) => {
-  // --- Ticket Category Delete Watcher ---
   if (channel.type === ChannelType.GuildCategory) {
     const ticketConfig = getTicketConfig(channel.guild.id);
     if (ticketConfig.category === channel.id) {
       resetTicketConfig(channel.guild.id);
-      // Notify server owner or log
       try {
         const owner = await channel.guild.fetchOwner();
         owner.send(`Ticket category was deleted in **${channel.guild.name}**. Ticket config has been reset.`).catch(() => {});
       } catch {}
     }
   }
-
-  // --- Welcome Channel Delete Watcher ---
   if (channel.type === ChannelType.GuildText) {
     try {
-      // Load latest config (in case it was updated)
       const config = require('./welcomeConfig.json');
       if (config.channel === channel.id) {
         config.channel = "";
         config.enabled = false;
         fs.writeFileSync('./welcomeConfig.json', JSON.stringify(config, null, 2));
-        // Notify the server owner
         try {
           const owner = await channel.guild.fetchOwner();
           owner.send(`The welcome channel was deleted in **${channel.guild.name}**. Welcome config has been reset.`).catch(() => {});
@@ -1051,28 +1077,23 @@ client.on('channelDelete', async (channel) => {
   }
 });
 
-// --- WELCOME EVENT HANDLER ---
 client.on('guildMemberAdd', async member => {
   if (!welcomeConfig.enabled || !welcomeConfig.channel) return;
   const channel = member.guild.channels.cache.get(welcomeConfig.channel);
   if (!channel) return;
-
   const joinDate = member.joinedAt.toLocaleDateString();
   const userCreated = member.user.createdAt.toLocaleDateString();
   const memberCount = member.guild.memberCount;
-
   let msg = welcomeConfig.message
     .replace('<@user>', `<@${member.id}>`)
     .replace('{membercount}', memberCount)
     .replace('{user_created}', userCreated)
     .replace('{join_date}', joinDate);
-
   const embed = new EmbedBuilder()
     .setTitle(`Welcome To The ${member.guild.name}!`)
     .setDescription(msg)
     .setColor(welcomeConfig.color)
     .setImage(welcomeConfig.image || null);
-
   try {
     await channel.send({ embeds: [embed] });
   } catch (err) {
@@ -1080,7 +1101,6 @@ client.on('guildMemberAdd', async member => {
   }
 });
 
-// Global error handler to prevent crashes
 process.on('unhandledRejection', (error) => {
   console.error('Unhandled promise rejection:', error);
 });
