@@ -282,6 +282,17 @@ client.on('messageCreate', async (message) => {
     if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
       return message.reply('❌ Only admins can use this command.');
     }
+
+    // --- Check if user already has a template in memory or file ---
+    if (
+      userTemplates[message.author.id] ||
+      fs.existsSync(`serverTemplate-${message.author.id}.json`)
+    ) {
+      return message.reply(
+        '❌ You already have a copied server template! Please paste it using `!paste-server` or clear it using `!clear-server-copy` before copying again.'
+      );
+    }
+
     try {
       const roles = message.guild.roles.cache
         .filter(role => role.name !== '@everyone')
@@ -365,6 +376,18 @@ client.on('messageCreate', async (message) => {
       message.reply('❌ Failed to copy server structure.');
     }
     return;
+  }
+
+  // --- CLEAR SERVER COPY (PER-USER) ---
+  if (message.content === '!clear-server-copy') {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply('❌ Only admins can use this command.');
+    }
+    delete userTemplates[message.author.id];
+    if (fs.existsSync(`serverTemplate-${message.author.id}.json`)) {
+      fs.unlinkSync(`serverTemplate-${message.author.id}.json`);
+    }
+    return message.reply('✅ Your server copy template has been cleared. You can now use `!copy-server` again.');
   }
 
   // --- INTERACTIVE PASTE SERVER (PER-USER) ---
