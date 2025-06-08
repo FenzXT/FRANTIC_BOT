@@ -44,7 +44,9 @@ A Simple Discord Bot Built With Node.js - JavaScript
 
 !antilink (disable using same command)
 
-!antimention @user/role (resets using !antimention)
+!antimention @user/role (resets using same command)
+
+!antinuke (disable using same command)
 
 !createwebhook "WebhookURL" "Color Code" "Headline" "Your Messages"
 
