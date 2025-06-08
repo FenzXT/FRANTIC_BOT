@@ -290,7 +290,7 @@ client.on('messageCreate', async (message) => {
       fs.existsSync(`serverTemplate-${message.author.id}.json`)
     ) {
       return message.reply(
-        '❌ You already have a copied server template! Please paste it using `!paste-server` or clear it using `!clear-server-copy` before copying again.'
+        '❌ You already have a copied server template! Please clear it using `!clear-server-copy` before copying again.'
       );
     }
 
@@ -695,7 +695,7 @@ client.on('messageCreate', async (message) => {
     }
     try {
       await message.channel.bulkDelete(100, true);
-      const reply = await message.channel.send(`Cleared up to 100 messages in this channel.`);
+      const reply = await message.channel.send(`cleared up to 100 messages.`);
       setTimeout(() => reply.delete(), 3000);
     } catch (err) {
       message.channel.send('Failed to clear messages. (Can only delete messages younger than 14 days)');
@@ -1022,7 +1022,7 @@ client.on('channelDelete', async (channel) => {
     const ticketConfig = getTicketConfig(channel.guild.id);
     if (ticketConfig.category === channel.id) {
       resetTicketConfig(channel.guild.id);
-      // Optionally notify server owner or log
+      // Notify server owner or log
       try {
         const owner = await channel.guild.fetchOwner();
         owner.send(`Ticket category was deleted in **${channel.guild.name}**. Ticket config has been reset.`).catch(() => {});
@@ -1039,7 +1039,7 @@ client.on('channelDelete', async (channel) => {
         config.channel = "";
         config.enabled = false;
         fs.writeFileSync('./welcomeConfig.json', JSON.stringify(config, null, 2));
-        // Optionally notify the server owner
+        // Notify the server owner
         try {
           const owner = await channel.guild.fetchOwner();
           owner.send(`The welcome channel was deleted in **${channel.guild.name}**. Welcome config has been reset.`).catch(() => {});
