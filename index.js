@@ -442,7 +442,7 @@ client.on('messageCreate', async (message) => {
       state.skipChannelAdd = content === '3';
       state.step = 'confirm';
       return message.reply(
-        `**Ready to run!**\nDelete Roles: ${state.deleteRoles ? 'Yes' : 'No'}\nAdd Roles: ${state.skipRoleAdd ? 'No' : 'Yes'}\nDelete Channels: ${state.deleteChannels ? 'Yes' : 'No'}\nAdd Channels: ${state.skipChannelAdd ? 'No' : 'Yes'}\nType \`run\` to start the process.`
+        `**Ready to run!**\nDelete Roles: ${state.deleteRoles ? 'Yes' : 'No'}\nAdd Roles: ${state.skipRoleAdd ? 'No' : 'Yes'}\nDelete Channels: ${state.deleteChannels ? 'Yes' : 'No'}\nAdd Channels: ${state.skipChannelAdd ? 'No' : 'Yes'}\nType \`run\` to start.`
       );
     }
 
@@ -1017,15 +1017,37 @@ client.on('interactionCreate', async interaction => {
 
 // --- TICKET SYSTEM CATEGORY DELETE WATCHER (PER-GUILD) ---
 client.on('channelDelete', async (channel) => {
-  if (channel.type !== ChannelType.GuildCategory) return;
-  const ticketConfig = getTicketConfig(channel.guild.id);
-  if (ticketConfig.category === channel.id) {
-    resetTicketConfig(channel.guild.id);
-    // Optionally notify server owner or log
+  // --- Ticket Category Delete Watcher ---
+  if (channel.type === ChannelType.GuildCategory) {
+    const ticketConfig = getTicketConfig(channel.guild.id);
+    if (ticketConfig.category === channel.id) {
+      resetTicketConfig(channel.guild.id);
+      // Optionally notify server owner or log
+      try {
+        const owner = await channel.guild.fetchOwner();
+        owner.send(`Ticket category was deleted in **${channel.guild.name}**. Ticket config has been reset.`).catch(() => {});
+      } catch {}
+    }
+  }
+
+  // --- Welcome Channel Delete Watcher ---
+  if (channel.type === ChannelType.GuildText) {
     try {
-      const owner = await channel.guild.fetchOwner();
-      owner.send(`Ticket category was deleted in **${channel.guild.name}**. Ticket config has been reset.`).catch(() => {});
-    } catch {}
+      // Load latest config (in case it was updated)
+      const config = require('./welcomeConfig.json');
+      if (config.channel === channel.id) {
+        config.channel = "";
+        config.enabled = false;
+        fs.writeFileSync('./welcomeConfig.json', JSON.stringify(config, null, 2));
+        // Optionally notify the server owner
+        try {
+          const owner = await channel.guild.fetchOwner();
+          owner.send(`The welcome channel was deleted in **${channel.guild.name}**. Welcome config has been reset.`).catch(() => {});
+        } catch {}
+      }
+    } catch (err) {
+      console.error("Error handling channelDelete for welcome channel:", err);
+    }
   }
 });
 
