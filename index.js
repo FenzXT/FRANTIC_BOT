@@ -291,6 +291,7 @@ client.on('messageCreate', async (message) => {
           position: role.position,
         }));
 
+      // --- Save categories with their permissions ---
       const categories = message.guild.channels.cache
         .filter(c => c.type === ChannelType.GuildCategory)
         .sort((a, b) => a.rawPosition - b.rawPosition)
@@ -298,6 +299,12 @@ client.on('messageCreate', async (message) => {
           id: cat.id,
           name: cat.name,
           position: cat.rawPosition,
+          permissionOverwrites: cat.permissionOverwrites.cache.map(po => ({
+            id: po.id,
+            allow: po.allow.bitfield.toString(),
+            deny: po.deny.bitfield.toString(),
+            type: po.type,
+          })),
           channels: message.guild.channels.cache
             .filter(ch => ch.parentId === cat.id)
             .sort((a, b) => a.rawPosition - b.rawPosition)
@@ -322,7 +329,31 @@ client.on('messageCreate', async (message) => {
             })),
         }));
 
-      const template = { roles, categories };
+      // --- Save uncategorized channels (parentId === null, not a category) ---
+      const uncategorizedChannels = message.guild.channels.cache
+        .filter(ch => ch.parentId === null && ch.type !== ChannelType.GuildCategory)
+        .sort((a, b) => a.rawPosition - b.rawPosition)
+        .map(ch => ({
+          id: ch.id,
+          name: ch.name,
+          type: ch.type,
+          topic: ch.topic || null,
+          nsfw: ch.nsfw || false,
+          bitrate: ch.bitrate || null,
+          userLimit: ch.userLimit || null,
+          rateLimitPerUser: ch.rateLimitPerUser || 0,
+          position: ch.rawPosition,
+          permissionOverwrites: ch.permissionOverwrites.cache.map(po => ({
+            id: po.id,
+            allow: po.allow.bitfield.toString(),
+            deny: po.deny.bitfield.toString(),
+            type: po.type,
+          })),
+          rtcRegion: ch.rtcRegion || null,
+          videoQualityMode: ch.videoQualityMode || null,
+        }));
+
+      const template = { roles, categories, uncategorizedChannels };
       userTemplates[message.author.id] = template;
       fs.writeFileSync(`serverTemplate-${message.author.id}.json`, JSON.stringify(template, null, 2));
       message.reply('✅ Server structure copied! Use `!paste-server` in another server to paste.');
@@ -427,7 +458,7 @@ client.on('messageCreate', async (message) => {
             }
           }
 
-          // 4. Recreate categories
+          // --- 4. Recreate categories with permission overwrites ---
           const categoryMap = new Map();
           const sortedCategories = template.categories.sort((a, b) => a.position - b.position);
           for (const cat of sortedCategories) {
@@ -436,6 +467,12 @@ client.on('messageCreate', async (message) => {
                 name: cat.name,
                 type: ChannelType.GuildCategory,
                 position: cat.position,
+                permissionOverwrites: cat.permissionOverwrites.map(po => ({
+                  id: po.id,
+                  allow: BigInt(po.allow),
+                  deny: BigInt(po.deny),
+                  type: po.type,
+                })),
               });
               categoryMap.set(cat.id, newCategory);
             } catch (err) {
@@ -443,7 +480,7 @@ client.on('messageCreate', async (message) => {
             }
           }
 
-          // 5. Recreate all channel types in categories
+          // --- 5. Recreate all channel types in categories, with permissions ---
           const channelMap = new Map();
           for (const cat of template.categories) {
             const newCategory = categoryMap.get(cat.id);
@@ -451,78 +488,43 @@ client.on('messageCreate', async (message) => {
             for (const ch of sortedChans) {
               try {
                 let newChannel;
+                const baseProps = {
+                  name: ch.name,
+                  type: ch.type,
+                  parent: newCategory.id,
+                  position: ch.position,
+                  permissionOverwrites: ch.permissionOverwrites.map(po => ({
+                    id: po.id,
+                    allow: BigInt(po.allow),
+                    deny: BigInt(po.deny),
+                    type: po.type,
+                  })),
+                };
                 if (ch.type === ChannelType.GuildText) {
                   newChannel = await message.guild.channels.create({
-                    name: ch.name,
-                    type: ChannelType.GuildText,
-                    parent: newCategory.id,
+                    ...baseProps,
                     topic: ch.topic,
                     nsfw: ch.nsfw,
                     rateLimitPerUser: ch.rateLimitPerUser,
-                    position: ch.position,
-                    permissionOverwrites: ch.permissionOverwrites.map(po => ({
-                      id: po.id,
-                      allow: BigInt(po.allow),
-                      deny: BigInt(po.deny),
-                      type: po.type,
-                    })),
                   });
                 } else if (ch.type === ChannelType.GuildVoice) {
                   newChannel = await message.guild.channels.create({
-                    name: ch.name,
-                    type: ChannelType.GuildVoice,
-                    parent: newCategory.id,
+                    ...baseProps,
                     bitrate: ch.bitrate,
                     userLimit: ch.userLimit,
-                    position: ch.position,
-                    permissionOverwrites: ch.permissionOverwrites.map(po => ({
-                      id: po.id,
-                      allow: BigInt(po.allow),
-                      deny: BigInt(po.deny),
-                      type: po.type,
-                    })),
+                    rtcRegion: ch.rtcRegion,
+                    videoQualityMode: ch.videoQualityMode,
                   });
                 } else if (ch.type === ChannelType.GuildAnnouncement) {
                   newChannel = await message.guild.channels.create({
-                    name: ch.name,
-                    type: ChannelType.GuildAnnouncement,
-                    parent: newCategory.id,
+                    ...baseProps,
                     topic: ch.topic,
                     nsfw: ch.nsfw,
-                    position: ch.position,
-                    permissionOverwrites: ch.permissionOverwrites.map(po => ({
-                      id: po.id,
-                      allow: BigInt(po.allow),
-                      deny: BigInt(po.deny),
-                      type: po.type,
-                    })),
                   });
                 } else if (ch.type === ChannelType.GuildStageVoice) {
-                  newChannel = await message.guild.channels.create({
-                    name: ch.name,
-                    type: ChannelType.GuildStageVoice,
-                    parent: newCategory.id,
-                    position: ch.position,
-                    permissionOverwrites: ch.permissionOverwrites.map(po => ({
-                      id: po.id,
-                      allow: BigInt(po.allow),
-                      deny: BigInt(po.deny),
-                      type: po.type,
-                    })),
-                  });
+                  newChannel = await message.guild.channels.create(baseProps);
                 } else if (ch.type === ChannelType.GuildForum) {
-                  newChannel = await message.guild.channels.create({
-                    name: ch.name,
-                    type: ChannelType.GuildForum,
-                    parent: newCategory.id,
-                    position: ch.position,
-                    permissionOverwrites: ch.permissionOverwrites.map(po => ({
-                      id: po.id,
-                      allow: BigInt(po.allow),
-                      deny: BigInt(po.deny),
-                      type: po.type,
-                    })),
-                  });
+                  newChannel = await message.guild.channels.create(baseProps);
                 }
                 if (newChannel) channelMap.set(ch.id, newChannel);
               } catch (err) {
@@ -531,7 +533,54 @@ client.on('messageCreate', async (message) => {
             }
           }
 
-          // 6. Notify only in the command channel
+          // --- 6. Create uncategorized channels (parentId=null) ---
+          for (const ch of (template.uncategorizedChannels || [])) {
+            try {
+              let newChannel;
+              const baseProps = {
+                name: ch.name,
+                type: ch.type,
+                position: ch.position,
+                permissionOverwrites: ch.permissionOverwrites.map(po => ({
+                  id: po.id,
+                  allow: BigInt(po.allow),
+                  deny: BigInt(po.deny),
+                  type: po.type,
+                })),
+              };
+              if (ch.type === ChannelType.GuildText) {
+                newChannel = await message.guild.channels.create({
+                  ...baseProps,
+                  topic: ch.topic,
+                  nsfw: ch.nsfw,
+                  rateLimitPerUser: ch.rateLimitPerUser,
+                });
+              } else if (ch.type === ChannelType.GuildVoice) {
+                newChannel = await message.guild.channels.create({
+                  ...baseProps,
+                  bitrate: ch.bitrate,
+                  userLimit: ch.userLimit,
+                  rtcRegion: ch.rtcRegion,
+                  videoQualityMode: ch.videoQualityMode,
+                });
+              } else if (ch.type === ChannelType.GuildAnnouncement) {
+                newChannel = await message.guild.channels.create({
+                  ...baseProps,
+                  topic: ch.topic,
+                  nsfw: ch.nsfw,
+                });
+              } else if (ch.type === ChannelType.GuildStageVoice) {
+                newChannel = await message.guild.channels.create(baseProps);
+              } else if (ch.type === ChannelType.GuildForum) {
+                newChannel = await message.guild.channels.create(baseProps);
+              }
+              if (newChannel) channelMap.set(ch.id, newChannel);
+            } catch (err) {
+              console.error(`Failed to create uncategorized channel "${ch.name}":`, err);
+            }
+          }
+
+          // 7. Notify only in the command channel
           const completedMessage = '✅ **Server structure paste operation completed!**';
           if (message.channel && message.guild.channels.cache.has(message.channel.id)) {
             await message.channel.send(completedMessage);
