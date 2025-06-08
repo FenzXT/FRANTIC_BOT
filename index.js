@@ -172,6 +172,7 @@ client.on('messageCreate', async (message) => {
         { name: '!kick @user', value: 'Kicks the mentioned user (requires KickMembers permission)' },
         { name: '!ban @user', value: 'Bans the mentioned user (requires BanMembers permission)' },
         { name: '!clear <number>', value: 'Deletes the specified number of messages (1-100, requires ManageMessages permission)' },
+        { name: '!clear all', value: 'Deletes up to 100 messages in this channel (requires ManageMessages permission)' }, // Added this line
         { name: '!timeout @user <seconds>', value: 'Times out the user for the given seconds (requires ModerateMembers permission)' },
         { name: '!createwebhook <url> <color> <headline> <message>', value: 'Sends a message via webhook (requires ManageWebhooks permission)' }
       )
@@ -441,8 +442,7 @@ client.on('messageCreate', async (message) => {
       state.skipChannelAdd = content === '3';
       state.step = 'confirm';
       return message.reply(
-        `**Ready to run!**\nDelete Roles: ${state.deleteRoles ? 'Yes' : 'No'}\nAdd Roles: ${state.skipRoleAdd ? 'No' : 'Yes'}\nDelete Channels: ${state.deleteChannels ? 'Yes' : 'No'}\nAdd Channels: ${state.skipChannelAdd ? 'No' : 'Yes'}\n` +
-        "Type `run` to start the process."
+        `**Ready to run!**\nDelete Roles: ${state.deleteRoles ? 'Yes' : 'No'}\nAdd Roles: ${state.skipRoleAdd ? 'No' : 'Yes'}\nDelete Channels: ${state.deleteChannels ? 'Yes' : 'No'}\nAdd Channels: ${state.skipChannelAdd ? 'No' : 'Yes'}\nType \`run\` to start the process.`
       );
     }
 
@@ -665,6 +665,7 @@ client.on('messageCreate', async (message) => {
     } catch (err) {
       message.channel.send('Failed to kick the user.');
     }
+    return;
   }
 
   if (message.content.startsWith('!ban')) {
@@ -684,6 +685,22 @@ client.on('messageCreate', async (message) => {
     } catch (err) {
       message.channel.send('Failed to ban the user.');
     }
+    return;
+  }
+
+  // --- !CLEAR ALL ADDED HERE ---
+  if (message.content.trim() === '!clear all') {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+      return message.reply('You do not have permission to clear messages.');
+    }
+    try {
+      await message.channel.bulkDelete(100, true);
+      const reply = await message.channel.send(`Cleared up to 100 messages in this channel.`);
+      setTimeout(() => reply.delete(), 3000);
+    } catch (err) {
+      message.channel.send('Failed to clear messages. (Can only delete messages younger than 14 days)');
+    }
+    return;
   }
 
   if (message.content.startsWith('!clear')) {
@@ -705,6 +722,7 @@ client.on('messageCreate', async (message) => {
     } catch (err) {
       message.channel.send('Failed to clear messages. (Can only delete messages younger than 14 days)');
     }
+    return;
   }
 
   if (message.content.startsWith('!timeout')) {
@@ -726,6 +744,7 @@ client.on('messageCreate', async (message) => {
     } catch (err) {
       message.channel.send('Failed to timeout the user. (I may not have permission or the user is above me)');
     }
+    return;
   }
 
   // --- WEBHOOK SENDER ---
@@ -758,6 +777,7 @@ client.on('messageCreate', async (message) => {
       console.error(err);
       message.channel.send('Failed to send message via the webhook. (Check the URL and permissions)');
     }
+    return;
   }
 
   // --- WELCOME CONFIG ---
