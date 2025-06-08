@@ -40,9 +40,9 @@ A Simple Discord Bot Built With Node.js - JavaScript
 
 !clear <1 ~ 100> OR !clear all (this will only delete upto 100 messages)
 
-!antispam
+!antispam (disable using same command)
 
-!antilink
+!antilink (disable using same command)
 
 !antimention @user/role (resets using !antimention)
 
