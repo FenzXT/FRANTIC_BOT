@@ -54,10 +54,119 @@ function resetTicketConfig(guildId) {
   saveTicketConfigs(configs);
 }
 
+// --- PROTECTION CONFIG (PER-GUILD) ---
+const protectionConfigPath = './protectionConfig.json';
+function loadProtectionConfigs() {
+  if (!fs.existsSync(protectionConfigPath)) fs.writeFileSync(protectionConfigPath, JSON.stringify({}));
+  return JSON.parse(fs.readFileSync(protectionConfigPath));
+}
+function saveProtectionConfigs(configs) {
+  fs.writeFileSync(protectionConfigPath, JSON.stringify(configs, null, 2));
+}
+function getProtectionConfig(guildId) {
+  const configs = loadProtectionConfigs();
+  return configs[guildId] || {
+    antispam: false,
+    antilink: false,
+    antimention: { enabled: false, users: [], roles: [] },
+    antinuke: false
+  };
+}
+function setProtectionConfig(guildId, data) {
+  const configs = loadProtectionConfigs();
+  configs[guildId] = { ...getProtectionConfig(guildId), ...data };
+  saveProtectionConfigs(configs);
+}
+const spamMap = {};
+const nukeMap = {};
+
+// --- Utility: isAdmin ---
+function isAdmin(member) {
+  return member.permissions.has(PermissionsBitField.Flags.Administrator);
+}
+
 // --- AFK, SERVER TEMPLATES ---
 let afkMap = {};
 let userTemplates = {};
 let pendingPaste = {};
+
+// --- ANTI-NUKE LISTENERS ---
+function attachAntiNukeListeners(client) {
+  if (client.__antinukeListenersAttached) return;
+  client.__antinukeListenersAttached = true;
+  const NUKE_LIMIT = 4;
+  const TIME_WINDOW = 10000; // 10 seconds
+
+  function recordNukeAction(guild, userId, reason) {
+    const now = Date.now();
+    if (!nukeMap[guild.id]) nukeMap[guild.id] = {};
+    if (!nukeMap[guild.id][userId]) nukeMap[guild.id][userId] = [];
+    nukeMap[guild.id][userId].push(now);
+    nukeMap[guild.id][userId] = nukeMap[guild.id][userId].filter(ts => now - ts < TIME_WINDOW);
+    if (nukeMap[guild.id][userId].length > NUKE_LIMIT) {
+      nukePunish(guild, userId, reason);
+    }
+  }
+  async function nukePunish(guild, userId, reason) {
+    try {
+      const member = await guild.members.fetch(userId);
+      if (!member || member.id === guild.ownerId) return;
+      await member.kick(`Anti-nuke triggered: ${reason}`);
+      const owner = await guild.fetchOwner();
+      await owner.send(`User <@${userId}> was kicked for suspected nuke attempt: ${reason}`);
+    } catch (e) {}
+  }
+  client.on('channelCreate', async (channel) => {
+    const config = getProtectionConfig(channel.guild.id);
+    if (!config.antinuke) return;
+    const audits = await channel.guild.fetchAuditLogs({ type: 10, limit: 1 });
+    const entry = audits.entries.first();
+    if (!entry) return;
+    const executor = entry.executor;
+    if (!executor || channel.guild.ownerId === executor.id) return;
+    recordNukeAction(channel.guild, executor.id, 'Mass channel creation');
+  });
+  client.on('channelDelete', async (channel) => {
+    const config = getProtectionConfig(channel.guild.id);
+    if (!config.antinuke) return;
+    const audits = await channel.guild.fetchAuditLogs({ type: 12, limit: 1 });
+    const entry = audits.entries.first();
+    if (!entry) return;
+    const executor = entry.executor;
+    if (!executor || channel.guild.ownerId === executor.id) return;
+    recordNukeAction(channel.guild, executor.id, 'Mass channel deletion');
+  });
+  client.on('roleCreate', async (role) => {
+    const config = getProtectionConfig(role.guild.id);
+    if (!config.antinuke) return;
+    const audits = await role.guild.fetchAuditLogs({ type: 30, limit: 1 });
+    const entry = audits.entries.first();
+    if (!entry) return;
+    const executor = entry.executor;
+    if (!executor || role.guild.ownerId === executor.id) return;
+    recordNukeAction(role.guild, executor.id, 'Mass role creation');
+  });
+  client.on('roleDelete', async (role) => {
+    const config = getProtectionConfig(role.guild.id);
+    if (!config.antinuke) return;
+    const audits = await role.guild.fetchAuditLogs({ type: 32, limit: 1 });
+    const entry = audits.entries.first();
+    if (!entry) return;
+    const executor = entry.executor;
+    if (!executor || role.guild.ownerId === executor.id) return;
+    recordNukeAction(role.guild, executor.id, 'Mass role deletion');
+  });
+  client.on('guildBanAdd', async (ban) => {
+    const config = getProtectionConfig(ban.guild.id);
+    if (!config.antinuke) return;
+    const audits = await ban.guild.fetchAuditLogs({ type: 22, limit: 1 });
+    const entry = audits.entries.first();
+    if (!entry) return;
+    const executor = entry.executor;
+    if (!executor || ban.guild.ownerId === executor.id) return;
+    recordNukeAction(ban.guild, executor.id, 'Mass ban');
+  });
+}
 
 const client = new Client({
   intents: [
@@ -65,6 +174,7 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildBans,
     GatewayIntentBits.GuildModeration
   ],
   partials: [Partials.Message, Partials.Channel, Partials.GuildMember]
@@ -72,11 +182,163 @@ const client = new Client({
 
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
+  attachAntiNukeListeners(client);
 });
 
+// --- PROTECTION (SPAM, LINK, MENTION, NUKE) ---
 client.on('messageCreate', async (message) => {
   if (message.author.bot || !message.guild) return;
+  const guildId = message.guild.id;
+  const config = getProtectionConfig(guildId);
 
+  // --- ANTI-LINK ---
+  if (config.antilink) {
+    const linkRegex = /(https?:\/\/[^\s]+)/gi;
+    if (linkRegex.test(message.content) && !isAdmin(message.member)) {
+      try {
+        await message.delete();
+        await message.author.send(
+          `Your message in **${message.guild.name}** was deleted because only admins can send links.`
+        );
+      } catch {}
+      return;
+    }
+  }
+
+  // --- ANTI-MENTION ---
+  if (config.antimention && config.antimention.enabled) {
+    let protectedIds = [
+      ...(config.antimention.users || []),
+      ...(config.antimention.roles || [])
+    ];
+    const userMatched = message.mentions.users.some(u => protectedIds.includes(u.id));
+    const roleMatched = message.mentions.roles.some(r => protectedIds.includes(r.id));
+    if ((userMatched || roleMatched) && !isAdmin(message.member)) {
+      try {
+        await message.delete();
+        await message.author.send(
+          `Your message in **${message.guild.name}** was deleted because only admins can mention protected users/roles.`
+        );
+      } catch {}
+      return;
+    }
+  }
+
+  // --- ANTI-SPAM ---
+  if (config.antispam) {
+    if (!spamMap[guildId]) spamMap[guildId] = {};
+    if (!spamMap[guildId][message.author.id]) spamMap[guildId][message.author.id] = { lastMsgs: [], timedOutRepeat: false };
+    const userSpam = spamMap[guildId][message.author.id];
+    userSpam.lastMsgs.push(message.content);
+    if (userSpam.lastMsgs.length > 3) userSpam.lastMsgs.shift();
+    if (
+      userSpam.lastMsgs.length === 3 &&
+      userSpam.lastMsgs[0] === userSpam.lastMsgs[1] &&
+      userSpam.lastMsgs[1] === userSpam.lastMsgs[2]
+    ) {
+      if (!userSpam.timedOutRepeat && !isAdmin(message.member)) {
+        userSpam.timedOutRepeat = true;
+        try {
+          await message.channel.send(`!timeout <@${message.author.id}> 60`);
+          await message.author.send(
+            `You have been timed out in **${message.guild.name}** for sending the same message 3 times in a row. Only admins can spam.`
+          );
+        } catch {}
+      }
+      return;
+    } else {
+      userSpam.timedOutRepeat = false;
+    }
+  }
+
+  // --- MODERATION COMMANDS ---
+  if (message.content.trim() === "!antispam") {
+    if (!isAdmin(message.member)) {
+      return message.reply('❌ Only admins can use this command.');
+    }
+    const prev = config.antispam;
+    setProtectionConfig(guildId, { antispam: !prev });
+    return message.reply(
+      `Antispam is now **${!prev ? 'enabled' : 'disabled'}**.\nWhen enabled: Only admins can spam (send the same message 3 times in a row).`
+    );
+  }
+  if (message.content.trim() === "!antilink") {
+    if (!isAdmin(message.member)) {
+      return message.reply('❌ Only admins can use this command.');
+    }
+    const prev = config.antilink;
+    setProtectionConfig(guildId, { antilink: !prev });
+    return message.reply(
+      `Antilink is now **${!prev ? 'enabled' : 'disabled'}**.\nWhen enabled: Only admins can send links.`
+    );
+  }
+  if (message.content.trim() === "!antimention") {
+    if (!isAdmin(message.member)) {
+      return message.reply('❌ Only admins can use this command.');
+    }
+    const prev = config.antimention || { enabled: false, users: [], roles: [] };
+    if ((!prev.users || prev.users.length === 0) && (!prev.roles || prev.roles.length === 0)) {
+      return message.reply(
+        "No protected users or roles. Use `!antimention @user/@role` to protect a user or role from being mentioned."
+      );
+    }
+    setProtectionConfig(guildId, {
+      antimention: {
+        enabled: false,
+        users: [],
+        roles: prev.roles || []
+      }
+    });
+    return message.reply(
+      `Antimention is now **disabled** and all protected users have been cleared.\n` +
+      (prev.roles && prev.roles.length > 0
+        ? `Protected roles remain: ${prev.roles.map(id => `<@&${id}>`).join(', ')}`
+        : `No protected roles remain.`
+      )
+    );
+  }
+  if (message.content.startsWith('!antimention ')) {
+    if (!isAdmin(message.member)) {
+      return message.reply('❌ Only admins can use this command.');
+    }
+    let users = message.mentions.users.map(u => u.id);
+    let roles = message.mentions.roles.map(r => r.id);
+    if (users.length === 0 && roles.length === 0) {
+      return message.reply('Please mention at least one user or role to protect/unprotect.');
+    }
+    let configObj = getProtectionConfig(guildId).antimention || { enabled: false, users: [], roles: [] };
+    users.forEach(uid => {
+      if (configObj.users.includes(uid)) {
+        configObj.users = configObj.users.filter(id => id !== uid);
+      } else {
+        configObj.users.push(uid);
+      }
+    });
+    roles.forEach(rid => {
+      if (configObj.roles.includes(rid)) {
+        configObj.roles = configObj.roles.filter(id => id !== rid);
+      } else {
+        configObj.roles.push(rid);
+      }
+    });
+    configObj.enabled = (configObj.users.length > 0 || configObj.roles.length > 0);
+    setProtectionConfig(guildId, { antimention: configObj });
+    return message.reply(
+      `Updated protected list.\nAntimention is now **${configObj.enabled ? 'enabled' : 'disabled'}**.\n` +
+      `Current protected users: ${configObj.users.map(id => `<@${id}>`).join(', ') || 'None'}\n` +
+      `Current protected roles: ${configObj.roles.map(id => `<@&${id}>`).join(', ') || 'None'}`
+    );
+  }
+  if (message.content.trim() === "!antinuke") {
+    if (!isAdmin(message.member)) {
+      return message.reply('❌ Only admins can use this command.');
+    }
+    const prev = !!config.antinuke;
+    setProtectionConfig(guildId, { antinuke: !prev });
+    return message.reply(
+      `Anti-nuke is now **${!prev ? 'enabled' : 'disabled'}**.\nWhen enabled: Nobody except the guild owner can mass create/delete channels & roles or mass ban users.`
+    );
+  }
   // --- TICKET SYSTEM COMMANDS (PER-GUILD) ---
   if (message.content.startsWith('!setticketrole') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     const role = message.mentions.roles.first();
@@ -172,8 +434,12 @@ client.on('messageCreate', async (message) => {
         { name: '!kick @user', value: 'Kicks the mentioned user (requires KickMembers permission)' },
         { name: '!ban @user', value: 'Bans the mentioned user (requires BanMembers permission)' },
         { name: '!clear <number>', value: 'Deletes the specified number of messages (1-100, requires ManageMessages permission)' },
-        { name: '!clear all', value: 'Deletes upto 100 messages' }, // Added this line
+        { name: '!clear all', value: 'Deletes upto 100 messages' },
         { name: '!timeout @user <seconds>', value: 'Times out the user for the given seconds (requires ModerateMembers permission)' },
+        { name: '!antispam', value: 'gives timeout for 60s (dis/enable using !antispam)' },
+        { name: '!antilink', value: 'delete links and dm the user (dis/enable using !antilink)' },
+        { name: '!antimention', value: 'Protect role/user from being pinged (dis/enable using !antimention)' },
+        { name: '!antinuke', value: 'Even admin cannot run nuke if this is enabled (dis/enable using !antinuke)' },
       )
       .setFooter({ text: 'FRANTIC BOT !HELP' });
 
