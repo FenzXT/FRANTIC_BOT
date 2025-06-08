@@ -40,6 +40,12 @@ A Simple Discord Bot Built With Node.js - JavaScript
 
 !clear <1 ~ 100> OR !clear all (this will only delete upto 100 messages)
 
+!antispam
+
+!antilink
+
+!antimention @user/role (resets using !antimention)
+
 !createwebhook "WebhookURL" "Color Code" "Headline" "Your Messages"
 
 !setchannel #channel  -  !setwelcomemsg [message]  -  !setwelcomecolor [hex]  -  !setwelcomeimage [url]
