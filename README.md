@@ -38,7 +38,7 @@ A Simple Discord Bot Built With Node.js - JavaScript
 
 !ban @user
 
-!clear <1 ~ 100>
+!clear <1 ~ 100> OR !clear all (this clear all will delete only 100 messages)
 
 !createwebhook "WebhookURL" "Color Code" "Headline" "Your Messages"
 
@@ -47,6 +47,8 @@ A Simple Discord Bot Built With Node.js - JavaScript
 !copy-server
 
 !paste-server
+
+!clear-server-copy
 
 !afk [reason]
 
