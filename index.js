@@ -202,6 +202,9 @@ client.on('messageCreate', async (message) => {
           name: '!paste-server', 
           value: 'Pastes the server structure - roles/channels, including Announcement, Stage, Forums (requires Administrator permission)' },
         { 
+          name: '!clear-server-copy', 
+          value: 'Clears your copied server template so you can copy again without pasting it (requires Administrator permission)' },
+        { 
           name: '!afk [reason]', 
           value: 'Also sets your AFK status with an optional reason. Others will see it when they mention you.' },
         { 
