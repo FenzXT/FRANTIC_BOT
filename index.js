@@ -172,9 +172,8 @@ client.on('messageCreate', async (message) => {
         { name: '!kick @user', value: 'Kicks the mentioned user (requires KickMembers permission)' },
         { name: '!ban @user', value: 'Bans the mentioned user (requires BanMembers permission)' },
         { name: '!clear <number>', value: 'Deletes the specified number of messages (1-100, requires ManageMessages permission)' },
-        { name: '!clear all', value: 'Deletes up to 100 messages in this channel (requires ManageMessages permission)' }, // Added this line
+        { name: '!clear all', value: 'Deletes upto 100 messages' }, // Added this line
         { name: '!timeout @user <seconds>', value: 'Times out the user for the given seconds (requires ModerateMembers permission)' },
-        { name: '!createwebhook <url> <color> <headline> <message>', value: 'Sends a message via webhook (requires ManageWebhooks permission)' }
       )
       .setFooter({ text: 'FRANTIC BOT !HELP' });
 
@@ -183,11 +182,11 @@ client.on('messageCreate', async (message) => {
       .setColor('#7500ff')
       .setDescription('HERE ARE ALL AVAILABLE COMMANDS (PAGE 2):')
       .addFields(
+        { name: '!createwebhook <url> <color> <headline> <message>', value: 'Sends a message via webhook (requires ManageWebhooks permission)' },
         { name: '!setchannel #channel', value: 'Sets the channel for welcome messages (requires Administrator permission)' },
         { name: '!setwelcomemsg [message]', value: 'Sets the custom welcome message (use <@user>, {membercount}, {user_created}, {join_date})' },
         { name: '!setwelcomecolor [hex color]', value: 'Sets the embed color for welcome messages (use hex code)' },
         { name: '!setwelcomeimage [image url]', value: 'Sets the image URL for the welcome embed' },
-        { name: '!help', value: 'Shows this help message' }
       )
       .setFooter({ text: 'FRANTIC BOT !HELP' });
 
@@ -695,7 +694,7 @@ client.on('messageCreate', async (message) => {
     }
     try {
       await message.channel.bulkDelete(100, true);
-      const reply = await message.channel.send(`Cleared up to 100 messages in this channel.`);
+      const reply = await message.channel.send(`Cleared upto 100 messages.`);
       setTimeout(() => reply.delete(), 3000);
     } catch (err) {
       message.channel.send('Failed to clear messages. (Can only delete messages younger than 14 days)');
