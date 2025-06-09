@@ -183,6 +183,15 @@ const client = new Client({
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
   attachAntiNukeListeners(client);
+
+  // --- Status code starts here ---
+  function setServerStatus() {
+    const serverCount = client.guilds.cache.size;
+    client.user.setActivity(`HELPING ${serverCount} SERVERS!`, { type: 'WATCHING' });
+  }
+  setServerStatus();
+  setInterval(setServerStatus, 60 * 1000); // Update every 1 minute
+  // --- Status code ends here ---
 });
 
 // --- PROTECTION (SPAM, LINK, MENTION, NUKE) ---
