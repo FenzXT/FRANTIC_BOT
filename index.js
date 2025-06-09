@@ -1345,6 +1345,26 @@ client.on('guildMemberAdd', async member => {
   }
 });
 
+// --- RESET SERVER MEMORY ON KICK/BAN ---
+client.on('guildDelete', async (guild) => {
+  // Remove ticket config for this server
+  const ticketConfigs = loadTicketConfigs();
+  if (ticketConfigs[guild.id]) {
+    delete ticketConfigs[guild.id];
+    saveTicketConfigs(ticketConfigs);
+  }
+
+  // Remove protection config for this server
+  const protectionConfigs = loadProtectionConfigs();
+  if (protectionConfigs[guild.id]) {
+    delete protectionConfigs[guild.id];
+    saveProtectionConfigs(protectionConfigs);
+  }
+
+  // Log for debugging
+  console.log(`All memory for server ${guild.id} has been reset (bot kicked or banned).`);
+});
+
 // Global error handler to prevent crashes
 process.on('unhandledRejection', (error) => {
   console.error('Unhandled promise rejection:', error);
