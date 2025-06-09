@@ -185,7 +185,7 @@ client.once('ready', () => {
   attachAntiNukeListeners(client);
 });
 
-// --- PROTECTION (SPAM, LINK, MENTION, NUKE) ---
+// --- PROTECTION, TICKET, AFK, SERVER TEMPLATE, WELCOME, MODERATION, WEBHOOK, HELP ---
 client.on('messageCreate', async (message) => {
   if (message.author.bot || !message.guild) return;
   const guildId = message.guild.id;
@@ -339,6 +339,7 @@ client.on('messageCreate', async (message) => {
       `Anti-nuke is now **${!prev ? 'enabled' : 'disabled'}**.\nWhen enabled: Nobody except the guild owner can mass create/delete channels & roles or mass ban users.`
     );
   }
+
   // --- TICKET SYSTEM COMMANDS (PER-GUILD) ---
   if (message.content.startsWith('!setticketrole') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     const role = message.mentions.roles.first();
@@ -369,7 +370,6 @@ client.on('messageCreate', async (message) => {
   }
 
   if (message.content.startsWith('!createticket') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    // Step-by-step guidance for setting up ticket system
     const ticketConfig = getTicketConfig(message.guild.id);
     if (!ticketConfig.supportRole) {
       return message.reply('Please set your ticket role using `!setticketrole @role`.');
@@ -401,6 +401,7 @@ client.on('messageCreate', async (message) => {
     const row = new ActionRowBuilder().addComponents(button);
 
     await message.channel.send({ embeds: [embed], components: [row] });
+    // No per-admin state is stored after this point!
     return;
   }
 
@@ -687,7 +688,6 @@ client.on('messageCreate', async (message) => {
 
     // ROLES SELECTION
     if (state.step === 'roles' && ['1', '2', '3'].includes(content)) {
-      // 1: delete & add, 2: keep & add, 3: keep & don't add
       state.deleteRoles = content === '1';
       state.skipRoleAdd = content === '3';
       state.step = 'channels';
@@ -702,12 +702,11 @@ client.on('messageCreate', async (message) => {
 
     // CHANNELS SELECTION
     if (state.step === 'channels' && ['1', '2', '3'].includes(content)) {
-      // 1: delete & add, 2: keep & add, 3: keep & don't add
       state.deleteChannels = content === '1';
       state.skipChannelAdd = content === '3';
       state.step = 'confirm';
       return message.reply(
-        `**Ready to run!**\nDelete Roles: ${state.deleteRoles ? 'Yes' : 'No'}\nAdd Roles: ${state.skipRoleAdd ? 'No' : 'Yes'}\nDelete Channels: ${state.deleteChannels ? 'Yes' : 'No'}\nAdd Channels: ${state.skipChannelAdd ? 'No' : 'Yes'}\nType \`run\` to start.`
+        `**Ready to run!**\nDelete Roles: ${state.deleteRoles ? 'Yes' : 'No'}\nAdd Roles: ${state.skipRoleAdd ? 'No' : 'Yes'}\nDelete Channels: ${state.deleteChannels ? 'Yes' : 'No'}\nAdd Channels: ${state.skipChannelAdd ? 'No' : 'Yes'}\nReply with \`run\` to continue.`
       );
     }
 
@@ -715,7 +714,6 @@ client.on('messageCreate', async (message) => {
     if (state.step === 'confirm' && content.toLowerCase() === 'run') {
       (async () => {
         try {
-          // Load template for this user
           let template = userTemplates[message.author.id];
           if (!template && fs.existsSync(`serverTemplate-${message.author.id}.json`)) {
             template = JSON.parse(fs.readFileSync(`serverTemplate-${message.author.id}.json`));
@@ -1163,7 +1161,6 @@ client.on('interactionCreate', async interaction => {
             ],
             type: 'role'
           },
-          // Allow all admins
           ...interaction.guild.roles.cache
             .filter(role => role.permissions.has(PermissionsBitField.Flags.Administrator))
             .map(role => ({
@@ -1184,7 +1181,6 @@ client.on('interactionCreate', async interaction => {
           permissionOverwrites
         });
 
-        // Send greeting and delete button
         await channel.send({
           content: `<@&${ticketConfig.supportRole}> PINGED BY <@${interaction.user.id}>`,
           allowedMentions: { roles: [ticketConfig.supportRole] }
@@ -1192,7 +1188,6 @@ client.on('interactionCreate', async interaction => {
 
         await channel.send('`CLICK THE BUTTON BELOW TO DELETE THIS TICKET CHANNEL WHEN YOUR ISSUE HAS BEEN RESOLVED.`');
 
-        // Delete Ticket button
         const deleteButton = new ButtonBuilder()
           .setCustomId('delete_ticket')
           .setLabel('Delete Ticket')
@@ -1273,9 +1268,7 @@ client.on('interactionCreate', async interaction => {
           content: "An error occurred while processing your request.", 
           flags: MessageFlags.Ephemeral 
         });
-      } catch (err) {
-        // Ignore further errors
-      }
+      } catch (err) {}
     }
   }
 });
@@ -1287,7 +1280,6 @@ client.on('channelDelete', async (channel) => {
     const ticketConfig = getTicketConfig(channel.guild.id);
     if (ticketConfig.category === channel.id) {
       resetTicketConfig(channel.guild.id);
-      // Optionally notify server owner or log
       try {
         const owner = await channel.guild.fetchOwner();
         owner.send(`Ticket category was deleted in **${channel.guild.name}**. Ticket config has been reset.`).catch(() => {});
@@ -1298,13 +1290,11 @@ client.on('channelDelete', async (channel) => {
   // --- Welcome Channel Delete Watcher ---
   if (channel.type === ChannelType.GuildText) {
     try {
-      // Load latest config (in case it was updated)
       const config = require('./welcomeConfig.json');
       if (config.channel === channel.id) {
         config.channel = "";
         config.enabled = false;
         fs.writeFileSync('./welcomeConfig.json', JSON.stringify(config, null, 2));
-        // Optionally notify the server owner
         try {
           const owner = await channel.guild.fetchOwner();
           owner.send(`The welcome channel was deleted in **${channel.guild.name}**. Welcome config has been reset.`).catch(() => {});
@@ -1347,21 +1337,18 @@ client.on('guildMemberAdd', async member => {
 
 // --- RESET SERVER MEMORY ON KICK/BAN ---
 client.on('guildDelete', async (guild) => {
-  // Remove ticket config for this server
   const ticketConfigs = loadTicketConfigs();
   if (ticketConfigs[guild.id]) {
     delete ticketConfigs[guild.id];
     saveTicketConfigs(ticketConfigs);
   }
 
-  // Remove protection config for this server
   const protectionConfigs = loadProtectionConfigs();
   if (protectionConfigs[guild.id]) {
     delete protectionConfigs[guild.id];
     saveProtectionConfigs(protectionConfigs);
   }
 
-  // Log for debugging
   console.log(`All memory for server ${guild.id} has been reset (bot kicked or banned).`);
 });
 
