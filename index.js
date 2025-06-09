@@ -450,7 +450,7 @@ client.on('messageCreate', async (message) => {
       .setDescription('HERE ARE ALL AVAILABLE COMMANDS (PAGE 2):')
       .addFields(
         { name: '!createwebhook <url> <color> <headline> <message>', value: 'Sends a message via webhook (requires ManageWebhooks permission)' },
-        { name: '!setchannel #channel', value: 'Sets the channel for welcome messages (requires Administrator permission)' },
+        { name: '!setwelcomechannel #channel', value: 'Sets the channel for welcome messages (requires Administrator permission)' },
         { name: '!setwelcomemsg [message]', value: 'Sets the custom welcome message (use <@user>, {membercount}, {user_created}, {join_date})' },
         { name: '!setwelcomecolor [hex color]', value: 'Sets the embed color for welcome messages (use hex code)' },
         { name: '!setwelcomeimage [image url]', value: 'Sets the image URL for the welcome embed' },
@@ -1044,12 +1044,12 @@ client.on('messageCreate', async (message) => {
   }
 
   // --- WELCOME CONFIG ---
-  if (message.content.startsWith('!setchannel') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+  if (message.content.startsWith('!setwelcomechannel') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     const channel = message.mentions.channels.first();
     if (!channel) {
       return message.reply(
         'Please mention a channel to set as welcome channel.\n' +
-        '**Example:** `!setchannel #welcome`'
+        '**Example:** `!setwelcomechannel #welcome`'
       );
     }
     welcomeConfig.channel = channel.id;
