@@ -368,42 +368,43 @@ client.on('messageCreate', async (message) => {
     return message.reply(`Ticket category set to <#${categoryId}>`);
   }
 
-  if (message.content.startsWith('!createticket') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    // Step-by-step guidance for setting up ticket system
-    const ticketConfig = getTicketConfig(message.guild.id);
-    if (!ticketConfig.supportRole) {
-      return message.reply('Please set your ticket role using `!setticketrole @role`.');
-    } else if (!ticketConfig.category) {
-      return message.reply('Please set your ticket category using `!setticketcategory [id]`.');
-    }
-
-    const regex = /!createticket\s+"([^"]+)"\s+"([^"]+)"\s+"(#[0-9A-Fa-f]{6})"/;
-    const match = message.content.match(regex);
-    if (!match) {
-      return message.reply(
-        'Usage: `!createticket "headline" "message" "#colorhex"`'
-      );
-    }
-    const headline = match[1];
-    const ticketMsg = match[2];
-    const embedColor = match[3];
-
-    const embed = new EmbedBuilder()
-      .setTitle(headline)
-      .setDescription(ticketMsg)
-      .setColor(embedColor);
-
-    const button = new ButtonBuilder()
-      .setCustomId('create_ticket')
-      .setLabel('Create Ticket')
-      .setStyle(ButtonStyle.Success);
-
-    const row = new ActionRowBuilder().addComponents(button);
-
-    await message.channel.send({ embeds: [embed], components: [row] });
-    return;
+if (message.content.startsWith('!createticket') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+  // Step-by-step guidance for setting up ticket system
+  const ticketConfig = getTicketConfig(message.guild.id);
+  if (!ticketConfig.supportRole) {
+    return message.reply('Please set your ticket role using `!setticketrole @role`.');
+  } else if (!ticketConfig.category) {
+    return message.reply('Please set your ticket category using `!setticketcategory [id]`.');
   }
 
+  const regex = /!createticket\s+"([^"]+)"\s+"([^"]+)"\s+"(#[0-9A-Fa-f]{6})"/;
+  const match = message.content.match(regex);
+  if (!match) {
+    return message.reply(
+      'Usage: `!createticket "headline" "message" "#colorhex"`'
+    );
+  }
+  const headline = match[1];
+  const ticketMsg = match[2];
+  const embedColor = match[3];
+
+  const embed = new EmbedBuilder()
+    .setTitle(headline)
+    .setDescription(ticketMsg)
+    .setColor(embedColor);
+
+  const button = new ButtonBuilder()
+    .setCustomId('create_ticket')
+    .setLabel('Create Ticket')
+    .setStyle(ButtonStyle.Success);
+
+  const row = new ActionRowBuilder().addComponents(button);
+
+  await message.channel.send({ embeds: [embed], components: [row] });
+
+  return;
+}
+  
   // --- AFK SYSTEM ---
   if (message.content.startsWith('!afk')) {
     const reason = message.content.slice(5).trim() || "I'm AFK Don't Ping Me!.";
