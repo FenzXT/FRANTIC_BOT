@@ -1108,7 +1108,7 @@ if (message.content.startsWith('!timeout')) {
   if (!member || !durationArg) {
     return message.reply(
       'Usage: !timeout @user <duration>\n' +
-      '**Example:** `!timeout @username 60s`, `!timeout @username 60m`, `!timeout @username 24h`, `!timeout @username 30d`'
+      '**Example:** `!timeout @username 60s,m,h,d`'
     );
   }
 
@@ -1117,7 +1117,7 @@ if (message.content.startsWith('!timeout')) {
   if (!match) {
     return message.reply(
       'Invalid duration format. Use a number followed by s, m, h, or d.\n' +
-      '**Example:** `60s` (seconds), `5m` (minutes), `1h` (hours), `2d` (days)'
+      '**Example:** `60s` (seconds), `60m` (minutes), `24h` (hours), `30d` (days)'
     );
   }
   const value = parseInt(match[1]);
