@@ -482,7 +482,7 @@ client.on('messageCreate', async (message) => {
         { name: '!ban @user', value: 'Bans the mentioned user (requires BanMembers permission)' },
         { name: '!clear <number>', value: 'Deletes the specified number of messages (1-100, requires ManageMessages permission)' },
         { name: '!clear all', value: 'Deletes upto 100 messages' },
-        { name: '!timeout @user <seconds>', value: 'Times out the user for the given seconds (requires ModerateMembers permission)' },
+        { name: '!timeout @user <duration>', value: 'Times out the user for the given seconds,minutes,hours,days (requires ModerateMembers permission)' },
         { name: '!antispam', value: 'gives timeout for 60s (dis/enable using !antispam)' },
         { name: '!antilink', value: 'delete links and dm the user (dis/enable using !antilink)' },
         { name: '!antimention', value: 'Protect role/user from being pinged (dis/enable using !antimention)' },
@@ -1037,27 +1037,53 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  if (message.content.startsWith('!timeout')) {
-    if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
-      return message.reply('You do not have permission to timeout members.');
-    }
-    const member = message.mentions.members.first();
-    const args = message.content.split(' ');
-    const duration = parseInt(args[2]);
-    if (!member || isNaN(duration) || duration < 1) {
-      return message.reply(
-        'Usage: !timeout @user <seconds>\n' +
-        '**Example:** `!timeout @username 60`'
-      );
-    }
-    try {
-      await member.timeout(duration * 1000);
-      message.channel.send(`${member.user.tag} has been timed out for ${duration} seconds.`);
-    } catch (err) {
-      message.channel.send('Failed to timeout the user. (I may not have permission or the user is above me)');
-    }
-    return;
+if (message.content.startsWith('!timeout')) {
+  if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
+    return message.reply('You do not have permission to timeout members.');
   }
+  const member = message.mentions.members.first();
+  const args = message.content.split(' ');
+  const durationArg = args[2];
+
+  if (!member || !durationArg) {
+    return message.reply(
+      'Usage: !timeout @user <duration>\n' +
+      '**Example:** `!timeout @username 60s`, `!timeout @username 5m`, `!timeout @username 1h`, `!timeout @username 2d`'
+    );
+  }
+
+  // Parse duration with units
+  const match = durationArg.match(/^(\d+)([smhd])$/i);
+  if (!match) {
+    return message.reply(
+      'Invalid duration format. Use a number followed by s, m, h, or d.\n' +
+      '**Example:** `60s` (seconds), `5m` (minutes), `1h` (hours), `2d` (days)'
+    );
+  }
+  const value = parseInt(match[1]);
+  const unit = match[2].toLowerCase();
+
+  let durationMs = 0;
+  switch (unit) {
+    case 's': durationMs = value * 1000; break;
+    case 'm': durationMs = value * 1000 * 60; break;
+    case 'h': durationMs = value * 1000 * 60 * 60; break;
+    case 'd': durationMs = value * 1000 * 60 * 60 * 24; break;
+    default: durationMs = 0;
+  }
+
+  if (durationMs < 1000 || isNaN(durationMs)) {
+    return message.reply('Please specify a valid duration of at least 1 second.');
+  }
+
+  try {
+    await member.timeout(durationMs);
+    message.channel.send(`${member.user.tag} has been timed out for ${value}${unit}.`);
+  } catch (err) {
+    message.channel.send('Failed to timeout the user. (I may not have permission or the user is above me)');
+  }
+  return;
+}
 
   // --- WEBHOOK SENDER ---
   if (message.content.startsWith('!createwebhook')) {
