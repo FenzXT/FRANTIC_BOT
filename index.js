@@ -224,30 +224,64 @@ client.on('messageCreate', async (message) => {
     }
   }
 
-  // --- ANTI-SPAM ---
-  if (config.antispam) {
+  // --- ADVANCED ANTISPAM ---
+  const SPAM_WINDOW = 7000;     // ms - time window for spam (7 seconds)
+  const MAX_MSGS = 5;           // max messages in SPAM_WINDOW
+  const MAX_DUPLICATES = 3;     // max times same message allowed in window
+  const MAX_UNIQUE = 3;         // max unique messages allowed in SPAM_WINDOW (to catch "a","b","a" spam)
+  const TIMEOUT_SECONDS = 60;   // how long to timeout user
+
+  if (config.antispam && !isAdmin(message.member)) {
     if (!spamMap[guildId]) spamMap[guildId] = {};
-    if (!spamMap[guildId][message.author.id]) spamMap[guildId][message.author.id] = { lastMsgs: [], timedOutRepeat: false };
-    const userSpam = spamMap[guildId][message.author.id];
-    userSpam.lastMsgs.push(message.content);
-    if (userSpam.lastMsgs.length > 3) userSpam.lastMsgs.shift();
-    if (
-      userSpam.lastMsgs.length === 3 &&
-      userSpam.lastMsgs[0] === userSpam.lastMsgs[1] &&
-      userSpam.lastMsgs[1] === userSpam.lastMsgs[2]
-    ) {
-      if (!userSpam.timedOutRepeat && !isAdmin(message.member)) {
-        userSpam.timedOutRepeat = true;
-        try {
-          await message.channel.send(`!timeout <@${message.author.id}> 60`);
-          await message.author.send(
-            `You have been timed out in **${message.guild.name}** for sending the same message 3 times in a row. Only admins can spam.`
-          );
-        } catch {}
-      }
+    const userId = message.author.id;
+    if (!spamMap[guildId][userId]) {
+      spamMap[guildId][userId] = [];
+    }
+
+    // Store message data: {content, timestamp}
+    spamMap[guildId][userId].push({content: message.content, ts: Date.now()});
+    // Remove messages out of window
+    spamMap[guildId][userId] = spamMap[guildId][userId].filter(m => Date.now() - m.ts < SPAM_WINDOW);
+
+    const userMsgs = spamMap[guildId][userId];
+
+    // 1. Too many messages too quickly
+    if (userMsgs.length > MAX_MSGS) {
+      try { await message.delete(); } catch {}
+      try {
+        await message.channel.send(`!timeout <@${userId}> ${TIMEOUT_SECONDS}`);
+        await message.author.send(`You have been timed out in **${message.guild.name}** for spamming messages too fast.`);
+      } catch {}
+      spamMap[guildId][userId] = [];
       return;
-    } else {
-      userSpam.timedOutRepeat = false;
+    }
+
+    // 2. Duplicate message spam (total count in window)
+    const contentCounts = {};
+    for (const m of userMsgs) {
+      contentCounts[m.content] = (contentCounts[m.content] || 0) + 1;
+      if (contentCounts[m.content] >= MAX_DUPLICATES) {
+        try { await message.delete(); } catch {}
+        try {
+          await message.channel.send(`!timeout <@${userId}> ${TIMEOUT_SECONDS}`);
+          await message.author.send(`You have been timed out in **${message.guild.name}** for sending the same message repeatedly.`);
+        } catch {}
+        spamMap[guildId][userId] = [];
+        return;
+      }
+    }
+
+    // 3. Alternating spam (lots of unique but short messages)
+    // If user has more than MAX_UNIQUE different messages in the window, and all are very short (e.g. length <= 3), it's likely spam
+    const uniqueMsgs = [...new Set(userMsgs.map(m => m.content))];
+    if (uniqueMsgs.length > MAX_UNIQUE && uniqueMsgs.every(msg => msg.length <= 3)) {
+      try { await message.delete(); } catch {}
+      try {
+        await message.channel.send(`!timeout <@${userId}> ${TIMEOUT_SECONDS}`);
+        await message.author.send(`You have been timed out in **${message.guild.name}** for sending too many short messages rapidly.`);
+      } catch {}
+      spamMap[guildId][userId] = [];
+      return;
     }
   }
 
@@ -259,7 +293,7 @@ client.on('messageCreate', async (message) => {
     const prev = config.antispam;
     setProtectionConfig(guildId, { antispam: !prev });
     return message.reply(
-      `Antispam is now **${!prev ? 'enabled' : 'disabled'}**.\nWhen enabled: Only admins can spam (send the same message 3 times in a row).`
+      `Antispam is now **${!prev ? 'enabled' : 'disabled'}**.\nWhen enabled: Only admins can spam (send the same message or many messages fast).`
     );
   }
   if (message.content.trim() === "!antilink") {
@@ -329,29 +363,29 @@ client.on('messageCreate', async (message) => {
       `Current protected roles: ${configObj.roles.map(id => `<@&${id}>`).join(', ') || 'None'}`
     );
   }
-if (message.content.trim() === "!antinuke") {
-  const prev = !!config.antinuke;
-  const isOwner = message.guild.ownerId === message.author.id;
+  if (message.content.trim() === "!antinuke") {
+    const prev = !!config.antinuke;
+    const isOwner = message.guild.ownerId === message.author.id;
 
-  if (!isAdmin(message.member) && !isOwner) {
-    return message.reply('❌ Only admins (or owner) can use this command.');
-  }
-
-  if (!prev) {
-    // Not enabled: allow any admin to enable
-    setProtectionConfig(guildId, { antinuke: true });
-    return message.reply(
-      `Anti-nuke is now **enabled**.\nWhen enabled: Only the guild owner can disable this, not even admins.`
-    );
-  } else {
-    // Already enabled: only owner can disable
-    if (!isOwner) {
-      return message.reply('❌ Only the server owner can disable anti-nuke once enabled.');
+    if (!isAdmin(message.member) && !isOwner) {
+      return message.reply('❌ Only admins (or owner) can use this command.');
     }
-    setProtectionConfig(guildId, { antinuke: false });
-    return message.reply(`Anti-nuke is now **disabled**.`);
+
+    if (!prev) {
+      // Not enabled: allow any admin to enable
+      setProtectionConfig(guildId, { antinuke: true });
+      return message.reply(
+        `Anti-nuke is now **enabled**.\nWhen enabled: Only the guild owner can disable this, not even admins.`
+      );
+    } else {
+      // Already enabled: only owner can disable
+      if (!isOwner) {
+        return message.reply('❌ Only the server owner can disable anti-nuke once enabled.');
+      }
+      setProtectionConfig(guildId, { antinuke: false });
+      return message.reply(`Anti-nuke is now **disabled**.`);
+    }
   }
-}
   // --- TICKET SYSTEM COMMANDS (PER-GUILD) ---
   if (message.content.startsWith('!setticketrole') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     const role = message.mentions.roles.first();
@@ -720,7 +754,7 @@ if (message.content.trim() === "!antinuke") {
       state.skipChannelAdd = content === '3';
       state.step = 'confirm';
       return message.reply(
-        `**Ready to run!**\nDelete Roles: ${state.deleteRoles ? 'Yes' : 'No'}\nAdd Roles: ${state.skipRoleAdd ? 'No' : 'Yes'}\nDelete Channels: ${state.deleteChannels ? 'Yes' : 'No'}\nAdd Channels: ${state.skipChannelAdd ? 'No' : 'Yes'}\nType \`run\` to start.`
+        `**Ready to run!**\nDelete Roles: ${state.deleteRoles ? 'Yes' : 'No'}\nAdd Roles: ${state.skipRoleAdd ? 'No' : 'Yes'}\nDelete Channels: ${state.deleteChannels ? 'Yes' : 'No'}\nAdd Channels: ${state.skipChannelAdd ? 'No' : 'Yes'}\nReply with \`run\` to proceed.`
       );
     }
 
