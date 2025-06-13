@@ -1,7 +1,0 @@
-{
-  "channel": "",
-  "message": "Welcome <@user> to the server! You are member #{membercount}.",
-  "color": "#7500ff",
-  "image": "",
-  "enabled": false
-}
