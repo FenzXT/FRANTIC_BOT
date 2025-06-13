@@ -10,11 +10,11 @@ A Simple Discord Bot Built With Node.js - JavaScript
 
 - Bulk Message Clearing
 
-- Create Webhooks & Send Embedded Messages
+- Creates Webhook & Send Embedded Messages
 
 - Advanced Copy And Paste Server Without Kicking Members
 
-- Create Customizable Welcome Message By Your Own
+- Creates Customizable Welcome Message By Your Own
 
 - Creates Ticket Channel
 
@@ -32,11 +32,11 @@ A Simple Discord Bot Built With Node.js - JavaScript
 
 !help
 
-!timeout @user <60s,24h,30d>
+!timeout @user <60s,60m,24h,30d>
 
 !kick @user
 
-!ban @user
+!ban @user or !ban @user (duration)
 
 !clear <1 ~ 100> OR !clear all (this will only delete upto 100 messages)
 
@@ -46,7 +46,7 @@ A Simple Discord Bot Built With Node.js - JavaScript
 
 !antimention @user/role (resets using same command)
 
-!antinuke (disable using same command)
+!antinuke (only owner can disable using same command)
 
 !createwebhook "WebhookURL" "Color Code" "Headline" "Your Messages"
 
