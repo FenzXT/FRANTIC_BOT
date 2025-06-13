@@ -33,11 +33,20 @@ try {
 // --- TICKET CONFIG (PER-GUILD) ---
 const ticketConfigPath = './ticketConfig.json';
 function loadTicketConfigs() {
-  if (!fs.existsSync(ticketConfigPath)) fs.writeFileSync(ticketConfigPath, JSON.stringify({}));
-  return JSON.parse(fs.readFileSync(ticketConfigPath));
+  try {
+    if (!fs.existsSync(ticketConfigPath)) fs.writeFileSync(ticketConfigPath, JSON.stringify({}), 'utf8');
+    return JSON.parse(fs.readFileSync(ticketConfigPath, 'utf8'));
+  } catch (err) {
+    console.error("[TicketConfig] Error loading:", err);
+    return {};
+  }
 }
 function saveTicketConfigs(configs) {
-  fs.writeFileSync(ticketConfigPath, JSON.stringify(configs, null, 2));
+  try {
+    fs.writeFileSync(ticketConfigPath, JSON.stringify(configs, null, 2), 'utf8');
+  } catch (err) {
+    console.error("[TicketConfig] Error saving:", err);
+  }
 }
 function getTicketConfig(guildId) {
   const configs = loadTicketConfigs();
