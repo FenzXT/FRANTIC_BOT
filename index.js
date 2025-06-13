@@ -329,16 +329,29 @@ client.on('messageCreate', async (message) => {
       `Current protected roles: ${configObj.roles.map(id => `<@&${id}>`).join(', ') || 'None'}`
     );
   }
-  if (message.content.trim() === "!antinuke") {
-    if (!isAdmin(message.member)) {
-      return message.reply('❌ Only admins can use this command.');
-    }
-    const prev = !!config.antinuke;
-    setProtectionConfig(guildId, { antinuke: !prev });
-    return message.reply(
-      `Anti-nuke is now **${!prev ? 'enabled' : 'disabled'}**.\nWhen enabled: Nobody except the guild owner can mass create/delete channels & roles or mass ban users.`
-    );
+if (message.content.trim() === "!antinuke") {
+  const prev = !!config.antinuke;
+  const isOwner = message.guild.ownerId === message.author.id;
+
+  if (!isAdmin(message.member) && !isOwner) {
+    return message.reply('❌ Only admins (or owner) can use this command.');
   }
+
+  if (!prev) {
+    // Not enabled: allow any admin to enable
+    setProtectionConfig(guildId, { antinuke: true });
+    return message.reply(
+      `Anti-nuke is now **enabled**.\nWhen enabled: Only the guild owner can disable this, not even admins.`
+    );
+  } else {
+    // Already enabled: only owner can disable
+    if (!isOwner) {
+      return message.reply('❌ Only the server owner can disable anti-nuke once enabled.');
+    }
+    setProtectionConfig(guildId, { antinuke: false });
+    return message.reply(`Anti-nuke is now **disabled**.`);
+  }
+}
   // --- TICKET SYSTEM COMMANDS (PER-GUILD) ---
   if (message.content.startsWith('!setticketrole') && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     const role = message.mentions.roles.first();
