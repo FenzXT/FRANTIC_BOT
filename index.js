@@ -1245,42 +1245,27 @@ if (message.content.startsWith('!timeout')) {
 // --- TICKET SYSTEM INTERACTION HANDLER (PER-GUILD) ---
 client.on('interactionCreate', async interaction => {
   try {
-    // --- Create Ticket Button ---
     if (interaction.isButton() && interaction.customId === 'create_ticket') {
       const ticketConfig = getTicketConfig(interaction.guild.id);
-      if (!ticketConfig.supportRole) {
-        await interaction.reply({ 
-          content: 'Please set your ticket role using `!setticketrole @role`.', 
-          flags: MessageFlags.Ephemeral 
+      if (!ticketConfig.supportRole || !ticketConfig.category) {
+        await interaction.reply({
+          content: 'Ticket system is not fully configured. Please set both ticket role and category using `!setticketrole @role` and `!setticketcategory [id]`.',
+          flags: MessageFlags.Ephemeral
         });
         return;
       }
-      if (!ticketConfig.category) {
-        await interaction.reply({ 
-          content: 'Please set your ticket category using `!setticketcategory [id]`.', 
-          flags: MessageFlags.Ephemeral 
-        });
-        return;
-      }
-
-      // Only one open ticket per user
       const existing = interaction.guild.channels.cache.find(c =>
         c.name === `ticket-${interaction.user.id}`
       );
-      
       if (existing) {
-        await interaction.reply({ 
-          content: 'You already have an open ticket!', 
-          flags: MessageFlags.Ephemeral 
+        await interaction.reply({
+          content: 'You already have an open ticket!',
+          flags: MessageFlags.Ephemeral
         });
         return;
       }
-
-      // Defer the reply to give us more time to create the channel
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
       try {
-        // Create the ticket channel with explicit type for each overwrite
         const permissionOverwrites = [
           {
             id: interaction.guild.id,
@@ -1305,7 +1290,6 @@ client.on('interactionCreate', async interaction => {
             ],
             type: 'role'
           },
-          // Allow all admins
           ...interaction.guild.roles.cache
             .filter(role => role.permissions.has(PermissionsBitField.Flags.Administrator))
             .map(role => ({
@@ -1326,7 +1310,6 @@ client.on('interactionCreate', async interaction => {
           permissionOverwrites
         });
 
-        // Send greeting and delete button
         await channel.send({
           content: `<@&${ticketConfig.supportRole}> PINGED BY <@${interaction.user.id}>`,
           allowedMentions: { roles: [ticketConfig.supportRole] }
@@ -1334,12 +1317,10 @@ client.on('interactionCreate', async interaction => {
 
         await channel.send('`CLICK THE BUTTON BELOW TO DELETE THIS TICKET CHANNEL WHEN YOUR ISSUE HAS BEEN RESOLVED.`');
 
-        // Delete Ticket button
         const deleteButton = new ButtonBuilder()
           .setCustomId('delete_ticket')
           .setLabel('Delete Ticket')
           .setStyle(ButtonStyle.Danger);
-
         const deleteRow = new ActionRowBuilder().addComponents(deleteButton);
 
         await channel.send({
@@ -1347,21 +1328,20 @@ client.on('interactionCreate', async interaction => {
           components: [deleteRow]
         });
 
-        await interaction.editReply({ 
-          content: `Your ticket has been created: ${channel}`, 
-          flags: MessageFlags.Ephemeral 
+        await interaction.editReply({
+          content: `Your ticket has been created: ${channel}`,
+          flags: MessageFlags.Ephemeral
         });
       } catch (error) {
         console.error("Error creating ticket channel:", error);
-        await interaction.editReply({ 
-          content: "Failed to create ticket channel. Please try again later.", 
-          flags: MessageFlags.Ephemeral 
+        await interaction.editReply({
+          content: "Failed to create ticket channel. Please try again later.",
+          flags: MessageFlags.Ephemeral
         });
       }
       return;
     }
 
-    // --- Delete Ticket Button ---
     if (interaction.isButton() && interaction.customId === 'delete_ticket') {
       try {
         const ticketConfig = getTicketConfig(interaction.guild.id);
@@ -1371,18 +1351,18 @@ client.on('interactionCreate', async interaction => {
         const isCreator = interaction.channel.name === `ticket-${interaction.user.id}`;
 
         if (!(isAdmin || isSupport || isCreator)) {
-          await interaction.reply({ 
-            content: 'You do not have permission to delete this ticket.', 
-            flags: MessageFlags.Ephemeral 
+          await interaction.reply({
+            content: 'You do not have permission to delete this ticket.',
+            flags: MessageFlags.Ephemeral
           });
           return;
         }
 
-        await interaction.reply({ 
-          content: 'Deleting the ticket...', 
-          flags: MessageFlags.Ephemeral 
+        await interaction.reply({
+          content: 'Deleting the ticket...',
+          flags: MessageFlags.Ephemeral
         });
-        
+
         setTimeout(() => {
           interaction.channel.delete('Ticket closed').catch(err => {
             console.error("Failed to delete ticket channel:", err);
@@ -1391,51 +1371,57 @@ client.on('interactionCreate', async interaction => {
       } catch (error) {
         console.error("Error handling delete ticket button:", error);
         if (!interaction.replied) {
-          await interaction.reply({ 
-            content: "An error occurred while processing your request.", 
-            flags: MessageFlags.Ephemeral 
+          await interaction.reply({
+            content: "An error occurred while processing your request.",
+            flags: MessageFlags.Ephemeral
           });
         }
       }
       return;
     }
-
-    // --- Help Page Buttons ---
-    if (interaction.isButton() && interaction.customId.startsWith('help_page_')) {
-      // These are handled in the messageCreate event
-      return;
-    }
+    // Help Page Buttons handled elsewhere
   } catch (error) {
     console.error("Error handling interaction:", error);
-    
-    // Try to respond if we haven't already
     if (!interaction.replied && !interaction.deferred) {
       try {
-        await interaction.reply({ 
-          content: "An error occurred while processing your request.", 
-          flags: MessageFlags.Ephemeral 
+        await interaction.reply({
+          content: "An error occurred while processing your request.",
+          flags: MessageFlags.Ephemeral
         });
-      } catch (err) {
-        // Ignore further errors
-      }
+      } catch (err) {}
     }
   }
 });
 
 // --- TICKET SYSTEM CATEGORY DELETE WATCHER (PER-GUILD) ---
 client.on('channelDelete', async (channel) => {
-  // --- Ticket Category Delete Watcher ---
   if (channel.type === ChannelType.GuildCategory) {
     const ticketConfig = getTicketConfig(channel.guild.id);
     if (ticketConfig.category === channel.id) {
       resetTicketConfig(channel.guild.id);
-      // Optionally notify server owner or log
       try {
         const owner = await channel.guild.fetchOwner();
         owner.send(`Ticket category was deleted in **${channel.guild.name}**. Ticket config has been reset.`).catch(() => {});
       } catch {}
     }
   }
+  if (channel.type === ChannelType.GuildText) {
+    try {
+      const config = require('./welcomeConfig.json');
+      if (config.channel === channel.id) {
+        config.channel = "";
+        config.enabled = false;
+        fs.writeFileSync('./welcomeConfig.json', JSON.stringify(config, null, 2));
+        try {
+          const owner = await channel.guild.fetchOwner();
+          owner.send(`The welcome channel was deleted in **${channel.guild.name}**. Welcome config has been reset.`).catch(() => {});
+        } catch {}
+      }
+    } catch (err) {
+      console.error("Error handling channelDelete for welcome channel:", err);
+    }
+  }
+});
 
   // --- Welcome Channel Delete Watcher ---
   if (channel.type === ChannelType.GuildText) {
