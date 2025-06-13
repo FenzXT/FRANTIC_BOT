@@ -479,10 +479,10 @@ client.on('messageCreate', async (message) => {
       .setDescription('HERE ARE ALL AVAILABLE COMMANDS (PAGE 1):')
       .addFields(
         { name: '!kick @user', value: 'Kicks the mentioned user (requires KickMembers permission)' },
-        { name: '!ban @user', value: 'Bans the mentioned user (requires BanMembers permission)' },
+        { name: '!ban @user or !ban @user <duration>', value: 'Bans the mentioned user under seconds, minutes, hours, days (requires BanMembers permission)' },
         { name: '!clear <number>', value: 'Deletes the specified number of messages (1-100, requires ManageMessages permission)' },
         { name: '!clear all', value: 'Deletes upto 100 messages' },
-        { name: '!timeout @user <duration>', value: 'Times out the user for the given seconds,minutes,hours,days (requires ModerateMembers permission)' },
+        { name: '!timeout @user <duration>', value: 'Timeouts the user under seconds, minutes, hours, days (requires ModerateMembers permission)' },
         { name: '!antispam', value: 'gives timeout for 60s (dis/enable using !antispam)' },
         { name: '!antilink', value: 'delete links and dm the user (dis/enable using !antilink)' },
         { name: '!antimention', value: 'Protect role/user from being pinged (dis/enable using !antimention)' },
@@ -980,27 +980,87 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  if (message.content.startsWith('!ban')) {
-    if (!message.member.permissions.has(PermissionsBitField.Flags.BanMembers)) {
-      return message.reply('You do not have permission to ban members.');
-    }
-    const member = message.mentions.members.first();
-    if (!member) {
-      return message.reply(
-        'Please mention a user to ban.\n' +
-        '**Example:** `!ban @username`'
-      );
-    }
+// --- BAN COMMAND WITH TEMPORARY BAN SUPPORT AND FILE PERSISTENCE ---
+if (message.content.startsWith('!ban')) {
+  if (!message.member.permissions.has(PermissionsBitField.Flags.BanMembers)) {
+    return message.reply('You do not have permission to ban members.');
+  }
+  const args = message.content.split(' ');
+  const member = message.mentions.members.first();
+  const durationArg = args[2]; // 0: !ban, 1: @user, 2: <duration?>
+
+  if (!member) {
+    return message.reply(
+      'Please mention a user to ban.\n' +
+      '**Example:** `!ban @username` or `!ban @username 60s`'
+    );
+  }
+
+  if (!durationArg) {
+    // Permanent ban
     try {
       await member.ban();
-      message.channel.send(`${member.user.tag} was banned.`);
+      message.channel.send(`${member.user.tag} was permanently banned.`);
     } catch (err) {
       message.channel.send('Failed to ban the user.');
     }
     return;
   }
 
-  // --- !CLEAR ALL ADDED HERE ---
+  // Parse duration with units
+  const match = durationArg.match(/^(\d+)([smhd])$/i);
+  if (!match) {
+    return message.reply(
+      'Invalid duration format. Use a number followed by s, m, h, or d.\n' +
+      '**Example:** `60s` (seconds), `60m` (minutes), `24h` (hours), `30d` (days)'
+    );
+  }
+  const value = parseInt(match[1]);
+  const unit = match[2].toLowerCase();
+
+  let durationMs = 0;
+  switch (unit) {
+    case 's': durationMs = value * 1000; break;
+    case 'm': durationMs = value * 1000 * 60; break;
+    case 'h': durationMs = value * 1000 * 60 * 60; break;
+    case 'd': durationMs = value * 1000 * 60 * 60 * 24; break;
+    default: durationMs = 0;
+  }
+
+  if (durationMs < 1000 || isNaN(durationMs)) {
+    return message.reply('Please specify a valid duration of at least 1 second.');
+  }
+
+  try {
+    await member.ban();
+    message.channel.send(`${member.user.tag} was banned for ${value}${unit}.`);
+
+    // Save temp ban to file
+    const bans = loadTempBans();
+    bans.push({
+      guildId: message.guild.id,
+      userId: member.user.id,
+      unbanAt: Date.now() + durationMs
+    });
+    saveTempBans(bans);
+
+    // Schedule unban
+    setTimeout(async () => {
+      try {
+        await message.guild.members.unban(member.user.id, 'Temporary ban expired');
+      } catch (e) {
+        // User might have already been unbanned manually, ignore errors
+      }
+      // Remove from file after unban
+      const updatedBans = loadTempBans().filter(b => !(b.userId === member.user.id && b.guildId === message.guild.id));
+      saveTempBans(updatedBans);
+    }, durationMs);
+
+  } catch (err) {
+    message.channel.send('Failed to ban the user.');
+  }
+  return;
+}
   if (message.content.trim() === '!clear all') {
     if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
       return message.reply('You do not have permission to clear messages.');
@@ -1048,7 +1108,7 @@ if (message.content.startsWith('!timeout')) {
   if (!member || !durationArg) {
     return message.reply(
       'Usage: !timeout @user <duration>\n' +
-      '**Example:** `!timeout @username 60s`, `!timeout @username 5m`, `!timeout @username 1h`, `!timeout @username 2d`'
+      '**Example:** `!timeout @username 60s`, `!timeout @username 60m`, `!timeout @username 24h`, `!timeout @username 30d`'
     );
   }
 
